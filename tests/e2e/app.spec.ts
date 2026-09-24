@@ -128,6 +128,25 @@ test('background preview and download with background', async ({ page }) => {
   expect(transparent).toBe(0);
 });
 
+test('copy image puts a PNG on the clipboard', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto('./');
+  await page.locator('#file-input').setInputFiles(image('animal-cat.jpg'));
+  await waitForResult(page);
+  await page.getByRole('button', { name: 'Copy image' }).click();
+  await expect(page.locator('#toast')).toHaveText('Image copied to clipboard');
+  const clip = await page.evaluate(async () => {
+    const items = await navigator.clipboard.read();
+    const item = items.find((i) => i.types.includes('image/png'));
+    if (!item) return null;
+    const blob = await item.getType('image/png');
+    const bitmap = await createImageBitmap(blob);
+    return { size: blob.size, width: bitmap.width, height: bitmap.height };
+  });
+  expect(clip).not.toBeNull();
+  expect([clip?.width, clip?.height]).toEqual([451, 300]);
+});
+
 test('before/after slider is keyboard accessible', async ({ page }) => {
   await page.goto('./');
   await page.locator('#file-input').setInputFiles(image('animal-cat.jpg'));

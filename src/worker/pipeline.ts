@@ -34,6 +34,20 @@ function context2d(canvas: OffscreenCanvas): OffscreenCanvasRenderingContext2D {
   return ctx;
 }
 
+/**
+ * Decodes with EXIF orientation applied. Older engines only know the enum
+ * values 'none' / 'flipY' and reject 'from-image' with a TypeError; they
+ * apply the EXIF orientation by default, so decode again without options.
+ */
+async function decodeOriented(file: Blob): Promise<ImageBitmap> {
+  try {
+    return await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch (err) {
+    if (err instanceof TypeError) return createImageBitmap(file);
+    throw err;
+  }
+}
+
 /** Decodes the file (respecting EXIF orientation) and returns its pixels at the planned output size. */
 export async function decodeImage(file: Blob, limits: ImageLimits): Promise<DecodedImage & { plan: OutputPlan }> {
   assertCanvasSupport();
@@ -45,7 +59,7 @@ export async function decodeImage(file: Blob, limits: ImageLimits): Promise<Deco
 
   let bitmap: ImageBitmap;
   try {
-    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    bitmap = await decodeOriented(file);
   } catch (err) {
     throw new AppError(info.format === 'heic' ? 'heic-unsupported' : 'decode-failed', String(err));
   }
