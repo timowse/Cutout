@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Generated model files (built by tools/model/convert_birefnet.py)
+public/models/birefnet-lite/
+.cache/
+
+# Test output
+test-results/
+playwright-report/
+coverage/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Local quality reports (may contain your own photos)
+quality-report/
