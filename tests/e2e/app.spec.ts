@@ -6,7 +6,7 @@ test.beforeEach(async ({ context }) => {
   await useMockModel(context);
 });
 
-test('start page offers all input methods without loading the AI runtime', async ({ page }) => {
+test('start page offers all input methods and quietly preloads the AI model', async ({ page }) => {
   const requests: string[] = [];
   page.on('request', (r) => requests.push(r.url()));
   const errors: string[] = [];
@@ -24,9 +24,12 @@ test('start page offers all input methods without loading the AI runtime', async
   await expect(page.locator('.trust')).toContainText('Open source');
   await expect(page.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', 'privacy.html');
 
-  // The model and ONNX Runtime are loaded only once an image is chosen.
-  await page.waitForLoadState('networkidle');
-  expect(requests.some((u) => u.includes('.wasm') || u.includes('model.onnx'))).toBe(false);
+  // The model is downloaded and prepared in the background right away.
+  const chip = page.locator('#model-chip');
+  await expect(chip).toHaveAttribute('data-state', 'ready');
+  await expect(chip).toContainText('AI model ready');
+  await expect(chip).toHaveAttribute('title', /processor/); // headless Chromium has no GPU
+  expect(requests.some((u) => u.includes('model.onnx'))).toBe(true);
   expect(errors).toEqual([]);
 });
 
@@ -147,6 +150,31 @@ test('copy image puts a PNG on the clipboard', async ({ page, context }) => {
   expect([clip?.width, clip?.height]).toEqual([451, 300]);
 });
 
+test('dragging on the image moves the before/after divider', async ({ page }) => {
+  await page.goto('./');
+  await page.locator('#file-input').setInputFiles(image('animal-cat.jpg'));
+  await waitForResult(page);
+  const range = page.locator('#compare-range');
+  await expect.poll(async () => Number(await range.inputValue())).toBeLessThanOrEqual(1); // reveal finished
+  await page.evaluate(() => {
+    (window as unknown as { nativeDrags: number }).nativeDrags = 0;
+    document.addEventListener('dragstart', () => (window as unknown as { nativeDrags: number }).nativeDrags++, true);
+  });
+  const box = await page.locator('#frame').boundingBox();
+  if (!box) throw new Error('no frame');
+  const y = box.y + box.height / 2;
+  await page.mouse.move(box.x + box.width * 0.2, y);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) await page.mouse.move(box.x + box.width * (0.2 + i * 0.05), y);
+  expect(Number(await range.inputValue())).toBeGreaterThanOrEqual(68);
+  await page.mouse.move(box.x + box.width * 0.4, y);
+  await page.mouse.up();
+  expect(Number(await range.inputValue())).toBeGreaterThanOrEqual(38);
+  expect(Number(await range.inputValue())).toBeLessThanOrEqual(42);
+  expect(await page.evaluate(() => (window as unknown as { nativeDrags: number }).nativeDrags)).toBe(0);
+  await expect(page.locator('html')).toHaveAttribute('data-view', 'complete');
+});
+
 test('before/after slider is keyboard accessible', async ({ page }) => {
   await page.goto('./');
   await page.locator('#file-input').setInputFiles(image('animal-cat.jpg'));
@@ -158,6 +186,33 @@ test('before/after slider is keyboard accessible', async ({ page }) => {
   await page.keyboard.press('ArrowRight');
   expect(Number(await range.inputValue())).toBeGreaterThanOrEqual(2);
   await expect(range).toHaveAttribute('aria-valuetext', /Original \d+%/);
+});
+
+test('the model status shows progress while loading and then "ready"', async ({ page }) => {
+  await page.route('**/models/birefnet-lite/model.onnx.part00', async (route) => {
+    await new Promise((r) => setTimeout(r, 1500));
+    await route.fallback();
+  });
+  await page.goto('./');
+  const chip = page.locator('#model-chip');
+  await expect(chip).toBeVisible();
+  await expect(chip).not.toHaveAttribute('data-state', 'ready');
+  await expect(chip).toHaveAttribute('data-state', 'ready');
+  await expect(page.locator('#model-chip-retry')).toBeHidden();
+});
+
+test('?nopreload waits for the first image before loading the model', async ({ page }) => {
+  const modelRequests: string[] = [];
+  page.on('request', (r) => {
+    if (r.url().includes('model.onnx')) modelRequests.push(r.url());
+  });
+  await page.goto('./?nopreload');
+  await page.waitForTimeout(1000);
+  expect(modelRequests).toHaveLength(0);
+  await expect(page.locator('#model-chip')).toBeHidden();
+  await page.locator('#file-input').setInputFiles(image('animal-cat.jpg'));
+  await waitForResult(page);
+  expect(modelRequests).toHaveLength(1);
 });
 
 test('German browsers get the German interface', async ({ browser }) => {
@@ -219,8 +274,8 @@ test('privacy: the processing worker cannot contact other servers', async ({ pag
 });
 
 test('cancelling returns to the start page', async ({ page }) => {
-  await page.route('**/models/birefnet-lite/manifest.json', async (route) => {
-    await new Promise((r) => setTimeout(r, 1500)); // keep the job busy long enough to cancel it
+  await page.route('**/models/birefnet-lite/model.onnx.part00', async (route) => {
+    await new Promise((r) => setTimeout(r, 4000)); // keep the job busy long enough to cancel it
     await route.fallback();
   });
   await page.goto('./');

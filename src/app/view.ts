@@ -5,10 +5,11 @@ import { outputFileName } from '../shared/filename';
 import type { ErrorCode, RGB } from '../shared/protocol';
 import { CompareSlider } from './compare';
 import type { Features } from './features';
-import type { AppState, ViewState } from './state';
+import type { AppState, ModelStatus, ViewState } from './state';
 
 export interface ViewHandlers {
   choose(): void;
+  retryModel(): void;
   cancel(): void;
   startOver(): void;
   retry(): void;
@@ -64,6 +65,7 @@ export class View {
   private readonly compare: CompareSlider;
   private readonly bitmapContext: ImageBitmapRenderingContext | null;
   private drawnJob: number | null = null;
+  private chipRendered = false;
   private toastTimer = 0;
   private background: BackgroundChoice = 'transparent';
 
@@ -75,6 +77,7 @@ export class View {
     this.bitmapContext = this.canvas.getContext('bitmaprenderer');
 
     byId('choose-button').addEventListener('click', () => handlers.choose());
+    byId('model-chip-retry').addEventListener('click', () => handlers.retryModel());
     byId('dropzone').addEventListener('click', (e) => {
       if (!(e.target as HTMLElement).closest('button')) handlers.choose();
     });
@@ -123,13 +126,61 @@ export class View {
     this.toastTimer = window.setTimeout(() => this.toast.classList.remove('visible'), 3800);
   }
 
-  setModelNote(text: string | null): void {
-    const note = byId('model-note');
-    note.textContent = text ?? '';
-    note.hidden = !text;
+  /** The quiet model status in the header: download progress, preparing, ready or failed. */
+  private renderModelChip(model: ModelStatus): void {
+    const chip = byId('model-chip');
+    const text = byId('model-chip-text');
+    const short = byId('model-chip-short');
+    const indicator = chip.querySelector<HTMLElement>('.model-chip-indicator');
+    const retry = byId('model-chip-retry');
+    let state: string;
+    let long = '';
+    let brief = '';
+    let title = '';
+    switch (model.kind) {
+      case 'idle':
+        chip.hidden = true;
+        return;
+      case 'loading':
+        if (model.phase === 'download' && model.total > 0) {
+          const percent = Math.min(100, Math.floor((model.loaded / model.total) * 100));
+          state = 'download';
+          long = t('chip.download', { percent });
+          brief = t('chip.downloadShort', { percent });
+          title = t('chip.downloadTitle', { loaded: formatMB(model.loaded), total: formatMB(model.total) });
+          indicator?.style.setProperty('--p', String(percent));
+        } else {
+          state = 'preparing';
+          long = t('chip.preparing');
+          brief = t('chip.preparingShort');
+        }
+        break;
+      case 'ready':
+        state = 'ready';
+        long = t('chip.ready');
+        brief = t('chip.readyShort');
+        title = t(model.backend === 'webgpu' ? 'chip.readyGpu' : 'chip.readyCpu');
+        break;
+      case 'error':
+        state = 'error';
+        long = t('chip.error');
+        brief = t('chip.errorShort');
+        break;
+    }
+    chip.hidden = false;
+    chip.dataset.state = state;
+    if (text.textContent !== long) text.textContent = long;
+    if (short.textContent !== brief) short.textContent = brief;
+    if (title) chip.title = title;
+    else chip.removeAttribute('title');
+    retry.hidden = model.kind !== 'error';
   }
 
   render(state: AppState, prev: AppState): void {
+    if (state.model !== prev.model || !this.chipRendered) {
+      this.chipRendered = true;
+      this.renderModelChip(state.model);
+    }
     const view = state.view;
     const name = view.kind === 'cancelled' ? 'idle' : view.kind;
     this.root.dataset.view = name;
