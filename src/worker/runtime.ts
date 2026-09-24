@@ -87,6 +87,9 @@ export async function createSession(
     session = await ort.InferenceSession.create(bytes, {
       executionProviders: [backend],
       graphOptimizationLevel: 'all',
+      // WebAssembly memory can only grow, never shrink. Without the arena the
+      // CPU backend peaks at ~1.8 GB instead of ~3 GB for this model.
+      enableCpuMemArena: false,
       logSeverityLevel: 3,
     });
   } catch (err) {
