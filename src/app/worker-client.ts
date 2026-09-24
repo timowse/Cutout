@@ -1,6 +1,7 @@
 /** Typed wrapper around the inference worker. */
 
 import type { ModelConfig, WorkerRequest, WorkerResponse } from '../shared/protocol';
+import workerScriptUrl from '../worker/inference.worker.ts?worker&url';
 
 export type WorkerListener = (message: WorkerResponse) => void;
 
@@ -13,20 +14,30 @@ export class InferenceClient {
 
   private ensureWorker(): Worker {
     if (this.worker) return this.worker;
-    const worker = new Worker(new URL('../worker/inference.worker.ts', import.meta.url), {
-      type: 'module',
-      name: 'inference',
-    });
+    // The worker is started from a tiny blob: module that imports the real
+    // script. Workers loaded from blob: URLs inherit the page's
+    // Content-Security-Policy, so `connect-src 'self'` also binds the worker
+    // (a worker loaded directly from an https: URL would get the policy of its
+    // HTTP response, and static hosts like GitHub Pages cannot set one).
+    const scriptUrl = new URL(workerScriptUrl, location.href).href;
+    const bootstrap = URL.createObjectURL(new Blob([`import ${JSON.stringify(scriptUrl)};`], { type: 'text/javascript' }));
+    const worker = new Worker(bootstrap, { type: 'module', name: 'inference' });
+    let started = false;
     worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
+      if (!started) URL.revokeObjectURL(bootstrap);
+      started = true;
       if (event.data.type === 'MODEL_ERROR') this.modelRequested = false;
       for (const listener of this.listeners) listener(event.data);
     };
     worker.onerror = (event) => {
+      // The worker script failed to load (old browser) or crashed: start a fresh one next time.
       event.preventDefault();
+      URL.revokeObjectURL(bootstrap);
+      worker.terminate();
+      if (this.worker === worker) this.worker = null;
       this.modelRequested = false;
-      for (const listener of this.listeners) {
-        listener({ type: 'MODEL_ERROR', error: { code: 'runtime-unsupported', detail: event.message } });
-      }
+      const code = started ? 'inference-failed' : 'runtime-unsupported';
+      for (const listener of this.listeners) listener({ type: 'MODEL_ERROR', error: { code, detail: event.message } });
     };
     this.worker = worker;
     return worker;

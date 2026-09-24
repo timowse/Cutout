@@ -181,6 +181,24 @@ test('privacy: no image data is ever sent over the network', async ({ page, cont
   for (const p of paths) expect(p, p).toMatch(/^\/(|index\.html|privacy\.html|manifest\.webmanifest|robots\.txt|sw\.js|icons\/.+|assets\/.+|models\/birefnet-lite\/.+)$/);
 });
 
+test('privacy: the processing worker cannot contact other servers', async ({ page }) => {
+  await page.goto('./');
+  const workerPromise = page.waitForEvent('worker');
+  await page.locator('#file-input').setInputFiles(image('animal-cat.jpg'));
+  const worker = await workerPromise;
+  await waitForResult(page);
+  // The Content-Security-Policy (connect-src 'self') applies inside the worker too.
+  const violation = await worker.evaluate(async () => {
+    const seen = new Promise<string>((resolve) => {
+      self.addEventListener('securitypolicyviolation', (e) => resolve(e.effectiveDirective), { once: true });
+      setTimeout(() => resolve('none'), 5000);
+    });
+    await fetch('https://example.com/', { mode: 'no-cors' }).catch(() => undefined);
+    return seen;
+  });
+  expect(violation).toBe('connect-src');
+});
+
 test('cancelling returns to the start page', async ({ page }) => {
   await page.route('**/models/birefnet-lite/manifest.json', async (route) => {
     await new Promise((r) => setTimeout(r, 1500)); // keep the job busy long enough to cancel it

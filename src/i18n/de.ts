@@ -28,7 +28,6 @@ export const de: Messages = {
 
   'status.opening': 'Bild wird geöffnet…',
   'status.preparing': 'Hintergrundentfernung wird vorbereitet…',
-  'status.manifest': 'Hintergrundentfernung wird vorbereitet…',
   'status.downloading': 'KI-Modell wird geladen — {loaded} / {total}',
   'status.cache': 'KI-Modell wird geladen…',
   'status.init': 'KI-Modell wird gestartet…',
@@ -39,6 +38,7 @@ export const de: Messages = {
   'status.hintCpu': 'Läuft auf der CPU. Das kann einen Moment dauern.',
   'status.cancel': 'Abbrechen',
 
+  'result.ready': 'Hintergrund entfernt. Dein PNG kann heruntergeladen werden.',
   'result.download': 'PNG herunterladen',
   'result.preparing': 'PNG wird erstellt…',
   'result.copy': 'Bild kopieren',

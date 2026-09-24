@@ -85,6 +85,12 @@ canvas and tells the worker to drop its full-resolution result.
 - CSP (meta tag): `default-src 'self'`, `connect-src 'self'`, `script-src
   'self' 'wasm-unsafe-eval'` (needed to compile WebAssembly), no inline
   scripts or styles, no `eval`, `object-src 'none'`, `form-action 'none'`.
+- The inference worker is started through a tiny `blob:` module that imports
+  the real worker script. Workers from `blob:` URLs inherit the page's CSP, so
+  `connect-src 'self'` binds the worker too (a worker loaded straight from an
+  `https:` URL would only get the CSP of its HTTP response, which GitHub Pages
+  cannot set). An end-to-end test checks that a request from the worker to
+  another origin is blocked by the CSP.
 - No third-party requests at all (no CDN, no fonts, no analytics).
 - Input limits: file size ≤ 200 MB, pixel count checked from the header before
   decoding, output size capped per device (e.g. 16.7 MP on iOS).

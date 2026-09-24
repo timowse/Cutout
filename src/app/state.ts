@@ -133,7 +133,8 @@ export function reduce(state: AppState, event: AppEvent): AppState {
 
     case 'model-error': {
       const model: ModelStatus = { kind: 'error', error: event.error };
-      if (state.view.kind === 'loading-model') {
+      // Without a model no job can finish, whichever stage it is in.
+      if (isBusy(state.view)) {
         return {
           ...state,
           model,

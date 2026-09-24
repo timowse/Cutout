@@ -26,7 +26,6 @@ export const en = {
 
   'status.opening': 'Opening image…',
   'status.preparing': 'Preparing background removal…',
-  'status.manifest': 'Preparing background removal…',
   'status.downloading': 'Downloading AI model — {loaded} / {total}',
   'status.cache': 'Loading AI model…',
   'status.init': 'Starting AI model…',
@@ -37,6 +36,7 @@ export const en = {
   'status.hintCpu': 'Running on the CPU. This can take a little while.',
   'status.cancel': 'Cancel',
 
+  'result.ready': 'Background removed. Your PNG is ready to download.',
   'result.download': 'Download PNG',
   'result.preparing': 'Preparing PNG…',
   'result.copy': 'Copy image',

@@ -46,8 +46,11 @@ never leave your device**: the AI model runs locally in your browser.
   origin (`connect-src 'self'`).
 - Images and results live in memory only and are gone on reload. The PNG
   contains no metadata (no EXIF, no location).
-- An end-to-end test records every network request while an image is processed
-  and fails if anything other than a `GET` for the app's own files is sent.
+- The same policy also binds the background worker that processes the image
+  (it is started in a way that inherits the page's policy).
+- End-to-end tests record every network request while an image is processed
+  (they fail if anything other than a `GET` for the app's own files is sent)
+  and check that the worker is blocked from contacting other servers.
 
 See also the in-app [privacy page](privacy.html).
 

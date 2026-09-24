@@ -51,6 +51,15 @@ function serviceWorker(): Plugin {
   };
 }
 
+/** Vite's dev server injects CSS as inline <style> tags; allow them in development only. */
+function devCsp(): Plugin {
+  return {
+    name: 'dev-csp',
+    apply: 'serve',
+    transformIndexHtml: (html) => html.replace("style-src 'self'", "style-src 'self' 'unsafe-inline'"),
+  };
+}
+
 export default defineConfig({
   // Relative base: works under https://user.github.io/repo/ and on a custom domain alike.
   base: './',
@@ -82,5 +91,5 @@ export default defineConfig({
   preview: {
     headers: isolationHeaders,
   },
-  plugins: [serviceWorker()],
+  plugins: [serviceWorker(), devCsp()],
 });
