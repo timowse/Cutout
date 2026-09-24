@@ -37,9 +37,16 @@ let gpuBroken = false;
 
 async function initModel(config: ModelConfig): Promise<ModelState> {
   const started = performance.now();
-  const loaded = await loadModel(config.baseUrl, (phase, loaded, total) =>
-    post({ type: 'MODEL_PROGRESS', phase, loaded, total }),
-  );
+  // At most ~10 progress updates per second (the download reports every network chunk).
+  let lastPhase = '';
+  let lastPost = 0;
+  const loaded = await loadModel(config.baseUrl, (phase, loaded, total) => {
+    const now = performance.now();
+    if (phase === lastPhase && now - lastPost < 100 && loaded < total) return;
+    lastPhase = phase;
+    lastPost = now;
+    post({ type: 'MODEL_PROGRESS', phase, loaded, total });
+  });
   post({ type: 'MODEL_PROGRESS', phase: 'init', loaded: 0, total: 0 });
 
   let backend: Backend = 'wasm';

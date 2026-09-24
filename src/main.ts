@@ -10,10 +10,8 @@ import { initTheme } from './app/theme';
 import { View } from './app/view';
 import { InferenceClient } from './app/worker-client';
 import { APP_NAME, LICENSE_URL, MODEL_BASE_URL, REPO_URL } from './config';
-import { detectLocale, formatMB, setLocale, t, translateDocument } from './i18n';
+import { detectLocale, setLocale, translateDocument } from './i18n';
 import { computeLimits } from './shared/dimensions';
-import { isModelCached } from './shared/model-loader';
-import { isModelManifest } from './shared/protocol';
 
 const params = new URLSearchParams(location.search);
 setLocale(detectLocale(navigator.languages.length > 0 ? navigator.languages : [navigator.language], location.search));
@@ -59,6 +57,7 @@ const view = new View(
     cancel: () => controller.cancel(),
     startOver: () => controller.startOver(),
     retry: () => controller.retry(),
+    retryModel: () => controller.warmUp(),
     copy: () => void controller.copy(),
     downloadWithBackground: (color, background) => controller.downloadWithBackground(color, background),
   },
@@ -66,20 +65,24 @@ const view = new View(
 );
 controller.attach(view);
 
-// Tell first-time visitors about the one-time model download (and returning ones that it's cached).
-void (async () => {
-  if (await isModelCached(modelBaseUrl)) {
-    view.setModelNote(t('model.cached'));
-    return;
-  }
-  try {
-    const res = await fetch(new URL('manifest.json', modelBaseUrl), { cache: 'no-cache' });
-    const manifest: unknown = res.ok ? await res.json() : null;
-    if (isModelManifest(manifest)) view.setModelNote(t('model.firstUse', { size: formatMB(manifest.size) }));
-  } catch {
-    /* offline and not cached: the error will explain when an image is chosen */
-  }
-})();
-
 document.documentElement.dataset.ready = 'true';
-registerServiceWorker(() => controller.getState().view.kind === 'idle' && !features.webgpu);
+
+// A first visit may reload once when the service worker takes over (for
+// multi-threaded WebAssembly); never interrupt a model download for that.
+const mayReloadForIsolation = () => {
+  const state = controller.getState();
+  return state.view.kind === 'idle' && state.model.kind === 'idle' && !features.webgpu;
+};
+registerServiceWorker(mayReloadForIsolation);
+
+// Download and prepare the AI model in the background as soon as the page is
+// open, so the first image is processed right away. Skipped when the browser
+// asks to save data; the model then loads with the first image.
+const saveData = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
+if (!saveData && !params.has('nopreload')) {
+  const firstVisit = import.meta.env.PROD && 'serviceWorker' in navigator && !navigator.serviceWorker.controller;
+  const delay = firstVisit && !crossOriginIsolated && !features.webgpu ? 2500 : 300;
+  const start = () => window.setTimeout(() => controller.warmUp(), delay);
+  if (document.readyState === 'complete') start();
+  else window.addEventListener('load', start, { once: true });
+}
