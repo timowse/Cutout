@@ -14,7 +14,6 @@ export const de: Messages = {
 
   'hero.title': 'Bildhintergründe sofort entfernen.',
   'drop.title': 'Bild hierher ziehen',
-  'drop.titleTouch': 'Foto auswählen',
   'drop.or': 'oder',
   'drop.choose': 'Bild auswählen',
   'drop.paste': 'Einfügen mit',

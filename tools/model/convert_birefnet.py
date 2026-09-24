@@ -55,6 +55,13 @@ SOURCE = {
     "homepage": "https://github.com/ZhengPeng7/BiRefNet",
 }
 
+# SHA-256 of the complete converted model (default options) as validated
+# against the original export (see docs/MODEL.md). The conversion is
+# deterministic; if this changes, re-run the numerical comparison first.
+VALIDATED_OUTPUT_SHA256 = {
+    "fp16": "2d7a858058a1078023ea080303d27c1cc9cd0a9964555c563983c233f5840d06",
+}
+
 INPUT_NAME = "input_image"
 OUTPUT_NAME = "alpha"
 INPUT_SIZE = 1024
@@ -585,6 +592,11 @@ def main() -> None:
     ap.add_argument("--chunk-mib", type=int, default=24, help="chunk size in MiB")
     ap.add_argument("--version", default="1", help="model build version (bump to invalidate caches)")
     ap.add_argument("--save-onnx", type=Path, help="additionally write the unsplit model here")
+    ap.add_argument(
+        "--verify-output",
+        action="store_true",
+        help="fail unless the result is byte-identical to the validated model",
+    )
     args = ap.parse_args()
 
     source = args.source or fetch_source(args.cache)
@@ -617,6 +629,14 @@ def main() -> None:
         args.save_onnx.write_bytes(data)
     manifest = write_chunks(data, args.out, args.chunk_mib, args.version, args.weights)
     log(f"Wrote {len(manifest['parts'])} parts, {manifest['size'] / 1e6:.1f} MB, sha256 {manifest['sha256']}")
+    if args.verify_output:
+        expected = VALIDATED_OUTPUT_SHA256.get(args.weights)
+        if manifest["sha256"] != expected:
+            raise SystemExit(
+                f"Converted model differs from the validated one ({expected}). "
+                "Check tool versions (tools/model/requirements.txt) or re-validate and update the hash."
+            )
+        log("Output matches the validated model")
 
 
 if __name__ == "__main__":

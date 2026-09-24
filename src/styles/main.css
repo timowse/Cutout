@@ -200,6 +200,8 @@ kbd + kbd {
 .brand-mark {
   width: 28px;
   height: 28px;
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px var(--border);
 }
 
 .header-actions {
@@ -318,9 +320,9 @@ html:not([data-view='idle']) .view-work {
 }
 
 .view-idle h1 {
-  max-width: 15ch;
+  max-width: 22ch;
   margin: 0 0 clamp(28px, 5vh, 48px);
-  font-size: clamp(2.25rem, 1.4rem + 3.6vw, 4rem);
+  font-size: clamp(2.25rem, 1.3rem + 3.2vw, 3.625rem);
   font-weight: 750;
   line-height: 1.04;
   letter-spacing: -0.035em;
@@ -922,7 +924,7 @@ html[data-view='error'] .error {
   z-index: 50;
   display: flex;
   padding: 16px;
-  background: rgb(250 250 250 / 0.82);
+  background: rgb(250 250 250 / 0.95);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -932,11 +934,11 @@ html[data-view='error'] .error {
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) .drop-overlay {
-    background: rgb(14 14 16 / 0.84);
+    background: rgb(14 14 16 / 0.95);
   }
 }
 :root[data-theme='dark'] .drop-overlay {
-  background: rgb(14 14 16 / 0.84);
+  background: rgb(14 14 16 / 0.95);
 }
 html.dragging .drop-overlay {
   opacity: 1;
@@ -1057,4 +1059,13 @@ html.dragging .drop-overlay {
   grid-template-columns: minmax(0, 480px);
   justify-content: center;
   padding-top: clamp(24px, 8vh, 96px);
+}
+
+@media (max-width: 420px) {
+  .trust {
+    font-size: 0.875rem;
+  }
+  .trust li + li::before {
+    margin: 0 6px;
+  }
 }

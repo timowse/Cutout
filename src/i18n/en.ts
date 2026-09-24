@@ -12,7 +12,6 @@ export const en = {
 
   'hero.title': 'Remove image backgrounds instantly.',
   'drop.title': 'Drop an image here',
-  'drop.titleTouch': 'Choose a photo',
   'drop.or': 'or',
   'drop.choose': 'Choose image',
   'drop.paste': 'Paste with',
