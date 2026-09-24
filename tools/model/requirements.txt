@@ -1,0 +1,6 @@
+# Exact versions used to create and validate the shipped model (see docs/MODEL.md).
+onnx==1.23.0
+numpy==2.4.6
+protobuf==7.36.2
+ml_dtypes==0.6.0
+typing_extensions==4.16.0

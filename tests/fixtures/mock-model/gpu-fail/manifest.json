@@ -1,0 +1,42 @@
+{
+  "id": "mock-gpu-fail",
+  "version": "1",
+  "name": "Mock model (gpu-fail)",
+  "task": "testing only",
+  "input": {
+    "name": "input_image",
+    "width": 1024,
+    "height": 1024,
+    "mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "std": [
+      0.229,
+      0.224,
+      0.225
+    ]
+  },
+  "output": {
+    "name": "alpha",
+    "width": 1024,
+    "height": 1024
+  },
+  "weights": "fp32",
+  "size": 916,
+  "sha256": "39a9d75d7936f6fb89b5f7f83745af5e483ef21fc5b71e95a5484aa4c813b96a",
+  "parts": [
+    {
+      "file": "model.onnx.part00",
+      "size": 916,
+      "sha256": "39a9d75d7936f6fb89b5f7f83745af5e483ef21fc5b71e95a5484aa4c813b96a"
+    }
+  ],
+  "source": {
+    "url": "tools/testing/make_mock_models.py",
+    "sha256": "39a9d75d7936f6fb89b5f7f83745af5e483ef21fc5b71e95a5484aa4c813b96a",
+    "license": "MIT",
+    "homepage": ""
+  }
+}
