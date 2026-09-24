@@ -42,25 +42,25 @@ export function hexToRgb(hex: string): RGB {
 export class View {
   private readonly root = document.documentElement;
   private readonly stage = document.querySelector<HTMLElement>('.stage')!;
-  private readonly frame = (byId('frame'));
-  private readonly original = (byId('original-image') as HTMLImageElement);
-  private readonly canvas = (byId('result-canvas') as HTMLCanvasElement);
-  private readonly statusText = (byId('status-text'));
-  private readonly progress = (byId('progress'));
-  private readonly progressBar = (byId('progress-bar'));
-  private readonly statusHint = (byId('status-hint'));
-  private readonly download = (byId('download-link') as HTMLAnchorElement);
-  private readonly downloadLabel = (byId('download-label'));
-  private readonly meta = (byId('result-meta'));
-  private readonly scaledNote = (byId('scaled-note'));
-  private readonly copyButton = (byId('copy-button') as HTMLButtonElement);
-  private readonly bgButton = (byId('download-bg-button') as HTMLButtonElement);
-  private readonly colorInput = (byId('color-input') as HTMLInputElement);
-  private readonly errorBox = (byId('error'));
-  private readonly errorTitle = (byId('error-title'));
-  private readonly errorText = (byId('error-text'));
-  private readonly retryButton = (byId('retry-button') as HTMLButtonElement);
-  private readonly toast = (byId('toast'));
+  private readonly frame = byId('frame');
+  private readonly original = byId('original-image') as HTMLImageElement;
+  private readonly canvas = byId('result-canvas') as HTMLCanvasElement;
+  private readonly statusText = byId('status-text');
+  private readonly progress = byId('progress');
+  private readonly progressBar = byId('progress-bar');
+  private readonly statusHint = byId('status-hint');
+  private readonly download = byId('download-link') as HTMLAnchorElement;
+  private readonly downloadLabel = byId('download-label');
+  private readonly meta = byId('result-meta');
+  private readonly scaledNote = byId('scaled-note');
+  private readonly copyButton = byId('copy-button') as HTMLButtonElement;
+  private readonly bgButton = byId('download-bg-button') as HTMLButtonElement;
+  private readonly colorInput = byId('color-input') as HTMLInputElement;
+  private readonly errorBox = byId('error');
+  private readonly errorTitle = byId('error-title');
+  private readonly errorText = byId('error-text');
+  private readonly retryButton = byId('retry-button') as HTMLButtonElement;
+  private readonly toast = byId('toast');
   private readonly compare: CompareSlider;
   private readonly bitmapContext: ImageBitmapRenderingContext | null;
   private drawnJob: number | null = null;
@@ -71,7 +71,7 @@ export class View {
     handlers: ViewHandlers,
     private readonly features: Features,
   ) {
-    this.compare = new CompareSlider(this.frame, (byId('compare-range') as HTMLInputElement));
+    this.compare = new CompareSlider(this.frame, byId('compare-range') as HTMLInputElement);
     this.bitmapContext = this.canvas.getContext('bitmaprenderer');
 
     byId('choose-button').addEventListener('click', () => handlers.choose());
@@ -181,6 +181,7 @@ export class View {
 
   private clearResult(): void {
     this.drawnJob = null;
+    byId('sr-status').textContent = '';
     this.bitmapContext?.transferFromImageBitmap(null);
     this.compare.setEnabled(false);
     this.compare.set(100);
@@ -251,6 +252,7 @@ export class View {
       this.compare.setEnabled(true);
       this.compare.reveal();
       this.statusText.textContent = '';
+      byId('sr-status').textContent = t('result.ready');
       const active = document.activeElement;
       if (!active || active === document.body || active.closest('.view-idle, .status')) {
         this.download.focus({ preventScroll: true });

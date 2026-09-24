@@ -25,7 +25,8 @@ Especially relevant are issues that could:
   browser (Web Worker + WebAssembly/WebGPU).
 - The Content Security Policy restricts network access to the site's own
   origin (`connect-src 'self'`) and forbids inline scripts and `eval`
-  (`'wasm-unsafe-eval'` is required to compile WebAssembly).
+  (`'wasm-unsafe-eval'` is required to compile WebAssembly). The inference
+  worker is started from a `blob:` bootstrap so it inherits this policy.
 - File types are detected from file contents, dimensions are checked before
   decoding, and output sizes are capped per device.
 - The AI model is downloaded from the same origin and each chunk's SHA-256 is

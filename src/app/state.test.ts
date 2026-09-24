@@ -92,3 +92,13 @@ describe('state machine', () => {
     expect(isBusy({ kind: 'processing', jobId: 1, source: source('a'), stage: 'inference' })).toBe(true);
   });
 });
+
+describe('model failures', () => {
+  it('end a job that is still decoding', () => {
+    const s = run([
+      { type: 'select', jobId: 3, source: source('c.png') },
+      { type: 'model-error', error: 'runtime-unsupported' },
+    ]);
+    expect(s.view).toMatchObject({ kind: 'error', jobId: 3, error: 'runtime-unsupported' });
+  });
+});
