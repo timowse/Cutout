@@ -17,7 +17,7 @@ and when representing the project elsewhere.
 ## Enforcement
 
 Report unacceptable behaviour privately to the maintainers via a
-[private security advisory](https://github.com/timowse/Hintergrund-entfernen/security/advisories/new)
+[private security advisory](https://github.com/timowse/Cutout/security/advisories/new)
 or by contacting the repository owner on GitHub. Reports are handled
 confidentially. Maintainers may remove comments or contributions and may
 temporarily or permanently ban contributors who violate this code of conduct,

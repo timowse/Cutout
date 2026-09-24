@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Please report security issues **privately** via GitHub's
-["Report a vulnerability"](https://github.com/timowse/Hintergrund-entfernen/security/advisories/new)
+["Report a vulnerability"](https://github.com/timowse/Cutout/security/advisories/new)
 form (Security → Advisories), not in public issues.
 
 Please include steps to reproduce and the browser/OS you used. You will get a
