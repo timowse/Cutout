@@ -14,9 +14,11 @@ test.setTimeout(600_000);
 
 test('real model separates the person from the background', async ({ page }) => {
   await page.goto('./');
+  // The model starts downloading as soon as the page is open.
+  await expect(page.locator('#model-chip')).toBeVisible({ timeout: 10_000 });
   await page.locator('#file-input').setInputFiles(image('person-astronaut.jpg'));
-  await expect(page.locator('#status-text')).toContainText(/Downloading AI model — [\d.,]+ MB \/ 9\d MB/, { timeout: 60_000 });
   await waitForResult(page, 540_000);
+  await expect(page.locator('#model-chip')).toHaveAttribute('data-state', 'ready');
 
   const timings = JSON.parse((await page.locator('html').getAttribute('data-timings')) ?? '{}') as Record<string, number>;
   console.log('backend', await page.locator('html').getAttribute('data-model'), 'timings', timings);

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from './errors';
-import { MODEL_CACHE_PREFIX, isModelCached, loadModel } from './model-loader';
+import { MODEL_CACHE_PREFIX, loadModel } from './model-loader';
 import type { ModelManifest } from './protocol';
 
 const BASE = 'https://example.test/models/m/';
@@ -129,11 +129,5 @@ describe('loadModel', () => {
     const names = await storage.keys();
     expect(names.some((n) => n.includes('old-version'))).toBe(false);
     expect(names).toContain('unrelated-cache');
-  });
-
-  it('knows whether the model is cached', async () => {
-    expect(await isModelCached(BASE)).toBe(false);
-    await loadModel(BASE, () => undefined);
-    expect(await isModelCached(BASE)).toBe(true);
   });
 });

@@ -27,13 +27,14 @@ test('the model is downloaded once and then loaded from the cache', async ({ pag
     if (r.url().includes('model.onnx')) modelRequests.push(r.url());
   });
   await page.goto('./');
-  await expect(page.locator('#model-note')).toContainText('First use downloads the AI model once');
+  await expect(page.locator('#model-chip')).toHaveAttribute('data-state', 'ready');
   await page.locator('#file-input').setInputFiles(image('animal-cat.jpg'));
   await waitForResult(page);
   expect(modelRequests).toHaveLength(1);
 
   await page.reload();
-  await expect(page.locator('#model-note')).toHaveText('AI model is ready on this device — works offline.');
+  await expect(page.locator('#model-chip')).toHaveAttribute('data-state', 'ready');
+  expect(modelRequests).toHaveLength(1); // loaded from Cache Storage
   const statuses: string[] = [];
   await page.exposeFunction('recordStatus', (s: string) => statuses.push(s));
   await page.evaluate(() => {

@@ -32,8 +32,12 @@ never leave your device**: the AI model runs locally in your browser.
   background*.
 - **WebGPU** acceleration with automatic **WebAssembly** fallback.
 - **Works offline** once the app and model are cached; installable as a PWA.
-- Real download progress for the one-time model download (≈ 93 MB), cached
-  afterwards.
+- **The model loads in the background** as soon as the page is open (≈ 93 MB
+  once, cached afterwards). A small indicator in the header shows the download
+  progress and then "AI model ready", so the first image starts without
+  waiting. The preload is skipped when the browser asks to save data
+  (`Save-Data`) or with `?nopreload`; the model then loads with the first
+  image.
 - English and German UI, light/dark theme, keyboard and screen-reader friendly,
   responsive with iPhone safe areas.
 
@@ -88,7 +92,7 @@ Chromium, WebAssembly with 3 threads):
 
 | | |
 | --- | --- |
-| Initial page (HTML + CSS + JS, gzip) | ≈ 22 KB — the AI runtime and model load only when needed |
+| Initial page (HTML + CSS + JS, gzip) | ≈ 22 KB — the AI runtime and model follow in the background after the page has loaded |
 | ONNX Runtime (first use, gzip) | 3.7 MB (WebAssembly build) or 6.7 MB (WebGPU build) |
 | Model download (first use only) | 92.5 MB |
 | Model ready: first visit / cached | 9.1 s (local network) / 3.9 s |
@@ -108,9 +112,10 @@ Safari 16.4+ and Chrome for Android. WebGPU is used where available (Chrome/Edge
 113+, Safari 26, Firefox on Windows) and falls back to WebAssembly otherwise or
 on any WebGPU error. Unsupported browsers get a clear message.
 
-**Tested:** Chromium, with 28 automated end-to-end tests: file picker, drag &
-drop, paste, copy to clipboard, downloads, EXIF orientation, error cases,
-privacy (network audit, CSP in the worker), WebAssembly path, WebGPU path (via
+**Tested:** Chromium, with 31 automated end-to-end tests: file picker, drag &
+drop, paste, before/after slider (mouse and keyboard), background model
+preload, copy to clipboard, downloads, EXIF orientation, error cases, privacy
+(network audit, CSP in the worker), WebAssembly path, WebGPU path (via
 SwiftShader), WebGPU→WebAssembly fallback, model cache, offline mode and the
 real model. **Not yet tested
 on real devices:** Firefox, Safari, iOS and Android — please report issues.

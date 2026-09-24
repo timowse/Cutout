@@ -29,6 +29,8 @@ export class CompareSlider {
       this.hideHint();
       this.set(Number(range.value));
     });
+    // Never let the browser start its own drag of the preview image.
+    frame.addEventListener('dragstart', (e) => e.preventDefault());
     frame.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     frame.addEventListener('pointermove', (e) => this.onPointerMove(e));
     frame.addEventListener('pointerup', (e) => this.onPointerUp(e));
@@ -102,6 +104,7 @@ export class CompareSlider {
 
   private onPointerDown(e: PointerEvent): void {
     if (!this.enabled || e.button !== 0) return;
+    e.preventDefault(); // no text selection or native drag while comparing
     this.stopAnimation();
     this.hideHint();
     this.dragging = true;
