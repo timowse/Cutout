@@ -108,8 +108,11 @@ Safari 16.4+ and Chrome for Android. WebGPU is used where available (Chrome/Edge
 113+, Safari 26, Firefox on Windows) and falls back to WebAssembly otherwise or
 on any WebGPU error. Unsupported browsers get a clear message.
 
-**Tested:** Chromium (automated end-to-end tests: WebAssembly path, WebGPU path
-via SwiftShader, WebGPU→WebAssembly fallback, offline mode). **Not yet tested
+**Tested:** Chromium, with 28 automated end-to-end tests: file picker, drag &
+drop, paste, copy to clipboard, downloads, EXIF orientation, error cases,
+privacy (network audit, CSP in the worker), WebAssembly path, WebGPU path (via
+SwiftShader), WebGPU→WebAssembly fallback, model cache, offline mode and the
+real model. **Not yet tested
 on real devices:** Firefox, Safari, iOS and Android — please report issues.
 
 ## Local development

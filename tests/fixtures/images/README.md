@@ -11,6 +11,7 @@ restrictions according to scikit-image's documentation:
 | `product-coffee.png` | `coffee.png` | product | Rachel Michetti, courtesy of Pikolo Espresso Bar; CC0 |
 | `thin-structures-rocket.webp` | `rocket.jpg` | thin structures (launch towers) | SpaceX; public domain |
 | `motion-blur-clock.jpg` | `clock_motion.png` | motion blur, soft edges (greyscale) | Stéfan van der Walt; released into the public domain |
+| `exif-rotated-cat.jpg` | `chelsea.png` with EXIF orientation 6 | phone photo orientation | Stéfan van der Walt; CC0 |
 | `transparent-horse.png` | `horse.png` | input that already has transparency | Andreas Preuss; CC0 |
 
 Please only add images you took yourself or that are clearly licensed for

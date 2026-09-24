@@ -47,6 +47,17 @@ test('files with a wrong extension are recognised by their content', async ({ pa
   await waitForResult(page);
 });
 
+test('EXIF orientation of phone photos is applied', async ({ page }) => {
+  await page.goto('./');
+  await page.locator('#file-input').setInputFiles(image('exif-rotated-cat.jpg'));
+  await waitForResult(page);
+  // Stored as 451 × 300 with "rotate 90°" in EXIF: displayed and exported as 300 × 451.
+  await expect(page.locator('#result-meta')).toHaveText('300 × 451 px · PNG');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#download-link').click()]);
+  const png = readDownload(await download.path());
+  expect([png.width, png.height]).toEqual([300, 451]);
+});
+
 test('transparent input stays transparent', async ({ page }) => {
   await page.goto('./');
   await page.locator('#file-input').setInputFiles(image('transparent-horse.png'));
