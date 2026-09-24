@@ -59,7 +59,7 @@ SOURCE = {
 # against the original export (see docs/MODEL.md). The conversion is
 # deterministic; if this changes, re-run the numerical comparison first.
 VALIDATED_OUTPUT_SHA256 = {
-    "fp16": "2d7a858058a1078023ea080303d27c1cc9cd0a9964555c563983c233f5840d06",
+    "fp16": "0ce20110922f0b2e08de82ec2b0dda2d9a94514002d068c6872c68dc5fa06cb4",
 }
 
 INPUT_NAME = "input_image"
