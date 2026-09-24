@@ -108,22 +108,6 @@ async function deleteOtherCaches(keep: string): Promise<void> {
   }
 }
 
-/** True if the model of the given manifest is completely present in Cache Storage. */
-export async function isModelCached(baseUrl: string): Promise<boolean> {
-  try {
-    const res = await fetch(new URL(MANIFEST_FILE, baseUrl).href, { cache: 'no-cache' });
-    const manifest: unknown = res.ok ? await res.json() : await cachedManifest();
-    if (!isModelManifest(manifest) || typeof caches === 'undefined') return false;
-    const cache = await caches.open(cacheNameFor(manifest));
-    for (const part of manifest.parts) {
-      if (!(await cache.match(new URL(part.file, baseUrl).href))) return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export async function loadModel(baseUrl: string, onProgress: ProgressCallback): Promise<LoadedModel> {
   onProgress('manifest', 0, 0);
   const manifest = await fetchManifest(baseUrl);
