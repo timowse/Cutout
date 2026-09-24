@@ -1,0 +1,42 @@
+{
+  "id": "mock-default",
+  "version": "1",
+  "name": "Mock model (default)",
+  "task": "testing only",
+  "input": {
+    "name": "input_image",
+    "width": 1024,
+    "height": 1024,
+    "mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "std": [
+      0.229,
+      0.224,
+      0.225
+    ]
+  },
+  "output": {
+    "name": "alpha",
+    "width": 1024,
+    "height": 1024
+  },
+  "weights": "fp32",
+  "size": 231,
+  "sha256": "e0bb3c09d7af1114ebd3bdf1f125439683604a3235eb95464d14b9eb32b67286",
+  "parts": [
+    {
+      "file": "model.onnx.part00",
+      "size": 231,
+      "sha256": "e0bb3c09d7af1114ebd3bdf1f125439683604a3235eb95464d14b9eb32b67286"
+    }
+  ],
+  "source": {
+    "url": "tools/testing/make_mock_models.py",
+    "sha256": "e0bb3c09d7af1114ebd3bdf1f125439683604a3235eb95464d14b9eb32b67286",
+    "license": "MIT",
+    "homepage": ""
+  }
+}
