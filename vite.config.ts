@@ -36,7 +36,7 @@ function serviceWorker(): Plugin {
       const publicDir = resolve(root, 'public');
       const publicFiles = listFiles(publicDir)
         .map((f) => relative(publicDir, f).split(sep).join('/'))
-        .filter((f) => !f.startsWith('models/') && f !== '.nojekyll');
+        .filter((f) => !f.startsWith('models/') && !f.startsWith('licenses/'));
       const built = Object.keys(bundle).filter((f) => f !== 'sw.js' && !f.endsWith('.map') && !f.endsWith('.wasm'));
       const precache = ['./', ...new Set([...built, ...publicFiles])].sort();
       const buildId = createHash('sha256').update(precache.join('\n')).digest('hex').slice(0, 12);
