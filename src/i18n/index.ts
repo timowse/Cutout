@@ -30,7 +30,7 @@ export function getLocale(): Locale {
 
 /** Translates a key and fills `{placeholders}`. */
 export function t(key: MessageKey, params?: Record<string, string | number>): string {
-  let text: string = catalogs[current][key] ?? en[key];
+  let text: string = catalogs[current][key];
   if (params) {
     for (const [name, value] of Object.entries(params)) text = text.split(`{${name}}`).join(String(value));
   }

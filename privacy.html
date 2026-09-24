@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en" data-view="page">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; font-src 'self'; manifest-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title data-i18n="privacy.title">Privacy</title>
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="/src/styles/main.css" />
+    <script type="module" src="/src/privacy.ts"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="./" data-i18n-attr="aria-label:privacy.back" aria-label="Back to the app">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <defs>
+            <pattern id="brand-checker" width="8" height="8" patternUnits="userSpaceOnUse">
+              <rect width="8" height="8" fill="#ffffff" />
+              <rect width="4" height="4" fill="#c9cad1" />
+              <rect x="4" y="4" width="4" height="4" fill="#c9cad1" />
+            </pattern>
+            <clipPath id="brand-clip"><rect width="32" height="32" rx="8" /></clipPath>
+          </defs>
+          <g clip-path="url(#brand-clip)">
+            <rect width="32" height="32" fill="#111113" />
+            <rect x="16" width="16" height="32" fill="url(#brand-checker)" />
+            <circle cx="16" cy="16" r="9" fill="#2f6df6" />
+          </g>
+        </svg>
+        <span class="brand-name" data-app-name>Cutout</span>
+      </a>
+    </header>
+
+    <main id="main">
+      <article class="prose" data-locale="en" lang="en">
+        <h1>Privacy</h1>
+        <p><strong>Your images never leave your device.</strong> Background removal runs entirely in your browser.</p>
+
+        <h2>What happens to your images</h2>
+        <ul>
+          <li>Images you drop, choose or paste are processed locally by an AI model running in your browser (WebGPU or WebAssembly).</li>
+          <li>Images are never uploaded — not to us, not to GitHub, not to any other service.</li>
+          <li>Images and results are kept in memory only while the page is open. They are not stored on your device, and they are gone when you close or reload the page.</li>
+          <li>The downloaded PNG contains no metadata (no EXIF, no location) from the original photo.</li>
+        </ul>
+
+        <h2>What is downloaded</h2>
+        <p>
+          The page loads its own code, styles and the AI model (about 93 MB, once) from the same web address. The model is
+          stored in your browser's cache storage so later visits load it from disk and the app also works offline. You can
+          remove it at any time by clearing this site's data in your browser settings.
+        </p>
+        <p>
+          The page's Content Security Policy only allows network requests to its own address, so it cannot send data to any
+          other server.
+        </p>
+
+        <h2>No accounts, no tracking</h2>
+        <ul>
+          <li>No signup, no account, no payment.</li>
+          <li>No analytics, no advertising, no tracking pixels, no third-party scripts or fonts.</li>
+          <li>No cookies. Apart from the cached app and model, only small technical settings (such as your colour theme) are kept in your browser's storage.</li>
+        </ul>
+
+        <h2>Hosting</h2>
+        <p>
+          The website is served as static files by GitHub Pages. Like any web server, GitHub receives technical request data
+          (such as your IP address) when your browser loads the page's files; see the
+          <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" rel="noopener">GitHub Privacy Statement</a>.
+          Your images are never part of these requests.
+        </p>
+
+        <h2>Open source</h2>
+        <p>
+          The complete source code is public, so all of this can be verified:
+          <a data-repo-link href="https://github.com/timowse/Hintergrund-entfernen" rel="noopener">GitHub repository</a>.
+          The AI model is <a href="https://github.com/ZhengPeng7/BiRefNet" rel="noopener">BiRefNet</a> (MIT License).
+        </p>
+        <p><a href="./">← Back to the app</a></p>
+      </article>
+
+      <article class="prose" data-locale="de" lang="de" hidden>
+        <h1>Datenschutz</h1>
+        <p><strong>Deine Bilder verlassen nie dein Gerät.</strong> Die Hintergrundentfernung läuft vollständig in deinem Browser.</p>
+
+        <h2>Was mit deinen Bildern passiert</h2>
+        <ul>
+          <li>Bilder, die du hineinziehst, auswählst oder einfügst, werden lokal von einem KI-Modell in deinem Browser verarbeitet (WebGPU oder WebAssembly).</li>
+          <li>Bilder werden nie hochgeladen — nicht zu uns, nicht zu GitHub, zu keinem anderen Dienst.</li>
+          <li>Bilder und Ergebnisse liegen nur im Arbeitsspeicher, solange die Seite geöffnet ist. Sie werden nicht auf deinem Gerät gespeichert und sind nach dem Schließen oder Neuladen der Seite weg.</li>
+          <li>Das heruntergeladene PNG enthält keine Metadaten (kein EXIF, keinen Standort) aus dem Originalfoto.</li>
+        </ul>
+
+        <h2>Was geladen wird</h2>
+        <p>
+          Die Seite lädt ihren eigenen Code, die Gestaltung und das KI-Modell (ca. 93 MB, einmalig) von derselben Webadresse.
+          Das Modell wird im Cache-Speicher deines Browsers abgelegt, damit spätere Besuche es von der Festplatte laden und
+          die App auch offline funktioniert. Du kannst es jederzeit entfernen, indem du die Websitedaten in den
+          Browsereinstellungen löschst.
+        </p>
+        <p>
+          Die Content Security Policy der Seite erlaubt Netzwerkanfragen nur an die eigene Adresse. Die Seite kann also
+          keine Daten an andere Server senden.
+        </p>
+
+        <h2>Keine Konten, kein Tracking</h2>
+        <ul>
+          <li>Keine Anmeldung, kein Konto, keine Bezahlung.</li>
+          <li>Keine Analyse, keine Werbung, keine Tracking-Pixel, keine Skripte oder Schriften von Drittanbietern.</li>
+          <li>Keine Cookies. Neben der zwischengespeicherten App und dem Modell werden nur kleine technische Einstellungen (etwa dein Farbschema) im Browserspeicher abgelegt.</li>
+        </ul>
+
+        <h2>Hosting</h2>
+        <p>
+          Die Website wird als statische Dateien über GitHub Pages ausgeliefert. Wie jeder Webserver erhält GitHub dabei
+          technische Verbindungsdaten (z. B. deine IP-Adresse), wenn dein Browser die Dateien der Seite lädt; siehe das
+          <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" rel="noopener">GitHub Privacy Statement</a>.
+          Deine Bilder sind nie Teil dieser Anfragen.
+        </p>
+
+        <h2>Open Source</h2>
+        <p>
+          Der vollständige Quellcode ist öffentlich, alles hier ist also überprüfbar:
+          <a data-repo-link href="https://github.com/timowse/Hintergrund-entfernen" rel="noopener">GitHub-Repository</a>.
+          Das KI-Modell ist <a href="https://github.com/ZhengPeng7/BiRefNet" rel="noopener">BiRefNet</a> (MIT-Lizenz).
+        </p>
+        <p><a href="./">← Zurück zur App</a></p>
+      </article>
+    </main>
+
+    <footer class="site-footer">
+      <nav aria-label="Footer">
+        <a data-repo-link href="https://github.com/timowse/Hintergrund-entfernen" rel="noopener" data-i18n="footer.open">Open source</a>
+        <a data-license-link href="https://github.com/timowse/Hintergrund-entfernen/blob/main/LICENSE" rel="noopener" data-i18n="footer.license">License</a>
+      </nav>
+      <p class="footer-model" data-i18n="footer.model">AI model: BiRefNet (MIT)</p>
+    </footer>
+  </body>
+</html>

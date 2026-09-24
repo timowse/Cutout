@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <pattern id="c" width="64" height="64" patternUnits="userSpaceOnUse">
+      <rect width="64" height="64" fill="#ffffff"/>
+      <rect width="32" height="32" fill="#d4d5db"/>
+      <rect x="32" y="32" width="32" height="32" fill="#d4d5db"/>
+    </pattern>
+    <clipPath id="r"><rect width="512" height="512" rx="__RADIUS__"/></clipPath>
+  </defs>
+  <g clip-path="url(#r)">
+    <rect width="512" height="512" fill="#111113"/>
+    <rect x="256" width="256" height="512" fill="url(#c)"/>
+    <circle cx="256" cy="256" r="__CIRCLE__" fill="#2f6df6"/>
+  </g>
+</svg>

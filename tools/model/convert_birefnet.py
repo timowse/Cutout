@@ -317,6 +317,83 @@ def replace_deformable_convs(model: onnx.ModelProto) -> int:
     return len(scopes)
 
 
+def _const_value(graph: onnx.GraphProto, name: str):
+    for t in graph.initializer:
+        if t.name == name:
+            return numpy_helper.to_array(t)
+    for n in graph.node:
+        if n.op_type == "Constant" and n.output[0] == name:
+            return numpy_helper.to_array(n.attribute[0].t)
+    return None
+
+
+def replace_patch_concats(model: onnx.ModelProto) -> int:
+    """Rewrites the decoder's image-to-patches step as Reshape/Transpose.
+
+    The export implements it with nested Splits and a Concat of up to 1024
+    inputs (one per patch). WebGPU limits the number of buffers per shader
+    (often 8–10), so that Concat cannot run on the GPU. The same reordering
+    is expressed exactly by Reshape → Transpose → Reshape:
+    out[(j·gh + i)·C + c, y, x] = img[c, i·ph + y, j·pw + x].
+    """
+    graph = model.graph
+    shapes = infer_shapes(model)
+    producer = {o: n for n in graph.node for o in n.output}
+    ed = GraphEditor(model)
+    remove: set[int] = set()
+    count = 0
+    for cat in graph.node:
+        if cat.op_type != "Concat" or len(cat.input) < 8:
+            continue
+        unsq = [producer.get(i) for i in cat.input]
+        if not all(u is not None and u.op_type == "Unsqueeze" for u in unsq):
+            raise SystemExit(f"{cat.name}: unexpected large Concat layout")
+        row_splits = [producer[u.input[0]] for u in unsq]
+        col_split = producer[row_splits[0].input[0]]
+        gw = len(col_split.output)
+        gh = len(row_splits[0].output)
+        if gw * gh != len(cat.input) or col_split.op_type != "Split":
+            raise SystemExit(f"{cat.name}: unexpected patch grid")
+        for k, (u, rs) in enumerate(zip(unsq, row_splits)):
+            j, i = divmod(k, gh)
+            if rs.input[0] != col_split.output[j] or rs.output[i] != u.input[0]:
+                raise SystemExit(f"{cat.name}: patches are not in column-major order")
+        axes = {a.name: helper.get_attribute_value(a) for a in col_split.attribute}
+        row_axes = {a.name: helper.get_attribute_value(a) for a in row_splits[0].attribute}
+        if axes.get("axis") != -1 or row_axes.get("axis") != -2:
+            raise SystemExit(f"{cat.name}: unexpected split axes")
+        cat_axis = {a.name: helper.get_attribute_value(a) for a in cat.attribute}.get("axis")
+        unsq_axes = _const_value(graph, unsq[0].input[1])
+        if cat_axis != 1 or unsq_axes is None or list(np.atleast_1d(unsq_axes)) != [0]:
+            raise SystemExit(f"{cat.name}: unexpected concat axis")
+        src = col_split.input[0]
+        c, h, w = shapes[src]
+        if h % gh or w % gw:
+            raise SystemExit(f"{cat.name}: image not divisible into patches")
+        ph, pw = h // gh, w // gw
+        p = cat.name + "/patches"
+        x = ed.node("Reshape", [src, ed.const(p + "/s", np.array([c, gh, ph, gw, pw], np.int64))], p)
+        x = ed.node("Transpose", [x], p, perm=[3, 1, 0, 2, 4])
+        ed.node("Reshape", [x, ed.const(p + "/s", np.array([1, gw * gh * c, ph, pw], np.int64))], p, output=cat.output[0])
+        remove.add(id(cat))
+        count += 1
+    kept = [n for n in graph.node if id(n) not in remove]
+    del graph.node[:]
+    graph.node.extend(kept + ed.new_nodes)
+    graph.initializer.extend(ed.new_inits)
+    return count
+
+
+def check_buffer_counts(model: onnx.ModelProto, limit: int = 8) -> list[str]:
+    """Nodes that would need more storage buffers than WebGPU guarantees by default."""
+    cpu_ops = {"Shape", "Constant", "ConstantOfShape", "Range"}
+    return [
+        f"{n.op_type} {n.name} ({len([i for i in n.input if i])} in, {len(n.output)} out)"
+        for n in model.graph.node
+        if n.op_type not in cpu_ops and len([i for i in n.input if i]) + len(n.output) > limit
+    ]
+
+
 def add_sigmoid_output(model: onnx.ModelProto) -> None:
     graph = model.graph
     assert len(graph.output) == 1
@@ -518,9 +595,14 @@ def main() -> None:
     model = onnx.load(str(source))
     n = replace_deformable_convs(model)
     log(f"Replaced {n} deformable convolutions")
+    n = replace_patch_concats(model)
+    log(f"Rewrote {n} patch concatenations")
     add_sigmoid_output(model)
     remove_unused(model)
     topological_sort(model)
+    too_wide = check_buffer_counts(model)
+    if too_wide:
+        raise SystemExit("Nodes exceed the WebGPU buffer limit:\n  " + "\n  ".join(too_wide))
     stats = compress_weights(model, args.weights)
     log(f"Weights: {stats}")
     model.producer_name = "hintergrund-entfernen/convert_birefnet.py"

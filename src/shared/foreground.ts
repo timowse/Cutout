@@ -119,6 +119,34 @@ function computeEstimates(
   };
 }
 
+/** Colour planes and alpha on the working grid, as floats in [0, 1]. */
+function workingPlanes(
+  rgba: Uint8ClampedArray,
+  alpha: Uint8Array,
+  width: number,
+  height: number,
+  ww: number,
+  wh: number,
+): [Float32Array[], Float32Array] {
+  const n = width * height;
+  if (ww === width && wh === height) {
+    const planes = [new Float32Array(n), new Float32Array(n), new Float32Array(n)] as const;
+    const a = new Float32Array(n);
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      planes[0][i] = rgba[p]! / 255;
+      planes[1][i] = rgba[p + 1]! / 255;
+      planes[2][i] = rgba[p + 2]! / 255;
+      a[i] = alpha[i]! / 255;
+    }
+    return [[...planes], a];
+  }
+  const planes = resampleInterleaved(rgba, width, height, 4, 3, ww, wh, 'box');
+  const a = resampleInterleaved(alpha, width, height, 1, 1, ww, wh, 'box')[0]!;
+  for (const plane of planes) for (let i = 0; i < plane.length; i++) plane[i]! /= 255;
+  for (let i = 0; i < a.length; i++) a[i]! /= 255;
+  return [planes, a];
+}
+
 /**
  * Replaces the colours of `rgba` by the estimated foreground colours and
  * writes `alpha` into its alpha channel. Fully transparent pixels become
@@ -148,30 +176,12 @@ export function applyForeground(
   const workPixels = options.workPixels ?? 2_000_000;
   const [radius1, radius2] = options.radii ?? [90, 6];
   const s = Math.max(1, Math.ceil(Math.sqrt(n / workPixels)));
-  const ww = Math.max(1, Math.round(width / s));
-  const wh = Math.max(1, Math.round(height / s));
+  const ww = s === 1 ? width : Math.max(1, Math.round(width / s));
+  const wh = s === 1 ? height : Math.max(1, Math.round(height / s));
   const r1 = Math.max(1, Math.round(radius1 / s));
   const r2 = Math.max(1, Math.round(radius2 / s));
 
-  let planes: Float32Array[];
-  let a: Float32Array;
-  if (s === 1) {
-    planes = [new Float32Array(n), new Float32Array(n), new Float32Array(n)];
-    a = new Float32Array(n);
-    for (let i = 0, p = 0; i < n; i++, p += 4) {
-      planes[0]![i] = rgba[p]! / 255;
-      planes[1]![i] = rgba[p + 1]! / 255;
-      planes[2]![i] = rgba[p + 2]! / 255;
-      a[i] = alpha[i]! / 255;
-    }
-  } else {
-    planes = resampleInterleaved(rgba, width, height, 4, 3, ww, wh, 'box');
-    [a] = resampleInterleaved(alpha, width, height, 1, 1, ww, wh, 'box') as [Float32Array];
-    for (const plane of planes) for (let i = 0; i < plane.length; i++) plane[i]! /= 255;
-    for (let i = 0; i < a.length; i++) a[i]! /= 255;
-  }
-  const est = computeEstimates(planes, a, ww, wh, r1, r2);
-  planes = [];
+  const est = computeEstimates(...workingPlanes(rgba, alpha, width, height, ww, wh), ww, wh, r1, r2);
 
   // Bilinear lookup positions of each full-resolution column in the working grid.
   const sx = ww / width;

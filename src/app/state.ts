@@ -73,8 +73,10 @@ function isCurrent(state: AppState, jobId: number): boolean {
   return currentJobId(state.view) === jobId;
 }
 
+type BusyView = Extract<ViewState, { kind: 'loading-image' | 'loading-model' | 'processing' }>;
+
 /** True while an image is being worked on (a new image replaces it). */
-export function isBusy(view: ViewState): boolean {
+export function isBusy(view: ViewState): view is BusyView {
   return view.kind === 'loading-image' || view.kind === 'loading-model' || view.kind === 'processing';
 }
 
@@ -88,7 +90,7 @@ export function reduce(state: AppState, event: AppEvent): AppState {
 
     case 'stage': {
       const view = state.view;
-      if (!isCurrent(state, event.jobId) || !isBusy(view) || !('source' in view)) return state;
+      if (!isCurrent(state, event.jobId) || !isBusy(view)) return state;
       if (event.stage === 'decoding') return { ...state, view: { kind: 'loading-image', jobId: event.jobId, source: view.source } };
       if (event.stage === 'waiting-for-model') {
         return { ...state, view: { kind: 'loading-model', jobId: event.jobId, source: view.source } };
@@ -98,7 +100,7 @@ export function reduce(state: AppState, event: AppEvent): AppState {
 
     case 'preview': {
       const view = state.view;
-      if (!isCurrent(state, event.jobId) || !isBusy(view) || !('source' in view)) return state;
+      if (!isCurrent(state, event.jobId) || !isBusy(view)) return state;
       return {
         ...state,
         view: { kind: 'complete', jobId: event.jobId, source: view.source, result: { ...event.result, png: null, pngUrl: null } },

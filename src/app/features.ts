@@ -40,7 +40,7 @@ export interface FeatureEnv {
   ClipboardItem?: unknown;
 }
 
-export function detectFeatures(env: FeatureEnv = globalThis as unknown as FeatureEnv): Features {
+export function detectFeatures(env: FeatureEnv = globalThis): Features {
   const nav = env.navigator ?? {};
   const ua = nav.userAgent ?? '';
   const platform = nav.userAgentData?.platform ?? nav.platform ?? '';
@@ -59,7 +59,7 @@ export function detectFeatures(env: FeatureEnv = globalThis as unknown as Featur
     }
   }
 
-  const clipboard = (nav as Navigator).clipboard as Clipboard | undefined;
+  const clipboard = (nav as { clipboard?: { write?: unknown } }).clipboard;
   return {
     webgpu: !!(nav as { gpu?: unknown }).gpu,
     webassembly: !!wasm,
