@@ -40,7 +40,7 @@ async function loadOrt(kind: 'webgpu' | 'wasm', config: ModelConfig): Promise<Or
 
 /** Checks whether this device's GPU can hold the model's largest tensors. */
 export async function probeWebGPU(): Promise<{ ok: boolean; reason?: string }> {
-  if (typeof navigator === 'undefined' || !('gpu' in navigator) || !navigator.gpu) {
+  if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
     return { ok: false, reason: 'WebGPU not available' };
   }
   try {
@@ -53,6 +53,22 @@ export async function probeWebGPU(): Promise<{ ok: boolean; reason?: string }> {
     return { ok: true };
   } catch (err) {
     return { ok: false, reason: String(err) };
+  }
+}
+
+/** Reports a lost GPU device (driver reset, GPU process crash, …) so the next run can use the CPU. */
+function watchDeviceLoss(ort: Ort, onDeviceLost: (reason: string) => void): void {
+  try {
+    // Depending on the ONNX Runtime build this is a GPUDevice or a promise of one.
+    const device: unknown = (ort.env.webgpu as { device?: unknown }).device;
+    void Promise.resolve(device)
+      .then((d) => {
+        const lost = (d as Partial<GPUDevice> | undefined)?.lost;
+        if (lost) void lost.then((info) => onDeviceLost(`${info.reason}: ${info.message}`));
+      })
+      .catch(() => undefined);
+  } catch {
+    /* device loss then surfaces as a failed run, which also triggers the fallback */
   }
 }
 
@@ -71,17 +87,13 @@ export async function createSession(
     session = await ort.InferenceSession.create(bytes, {
       executionProviders: [backend],
       graphOptimizationLevel: 'all',
+      logSeverityLevel: 3,
     });
   } catch (err) {
     throw new AppError(backend === 'webgpu' ? 'inference-failed' : 'runtime-unsupported', `Session: ${String(err)}`);
   }
 
-  if (backend === 'webgpu' && onDeviceLost) {
-    void ort.env.webgpu.device.then(
-      (device) => device.lost.then((info) => onDeviceLost(`${info.reason}: ${info.message}`)),
-      () => undefined,
-    );
-  }
+  if (backend === 'webgpu' && onDeviceLost) watchDeviceLoss(ort, onDeviceLost);
 
   const { name: inputName, width, height } = manifest.input;
   const outputName = manifest.output.name;

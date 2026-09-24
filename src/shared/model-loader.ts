@@ -64,7 +64,7 @@ async function fetchManifest(baseUrl: string): Promise<ModelManifest> {
     const cached = await cachedManifest();
     if (cached) return cached;
     if (err instanceof AppError) throw err;
-    const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    const offline = typeof navigator !== 'undefined' && !navigator.onLine;
     throw new AppError(offline ? 'offline' : 'model-download-failed', `Manifest: ${String(err)}`);
   }
 }
@@ -167,7 +167,7 @@ export async function loadModel(baseUrl: string, onProgress: ProgressCallback): 
       }
       if (!data) {
         if (lastError instanceof AppError) throw lastError;
-        const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+        const offline = typeof navigator !== 'undefined' && !navigator.onLine;
         throw new AppError(offline ? 'offline' : 'model-download-failed', String(lastError));
       }
       if (cache) {

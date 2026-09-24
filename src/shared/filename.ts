@@ -8,8 +8,10 @@ export function sanitizeBaseName(name: string | undefined | null): string {
   let base = (name ?? '').normalize('NFC');
   base = base.split(/[\\/]/).pop() ?? '';
   base = base.replace(/\.[A-Za-z0-9]{1,5}$/, '');
+  // Control characters (code points below 32 and DEL) become separators.
+  base = Array.from(base, (ch) => (ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127 ? '-' : ch)).join('');
   base = base
-    .replace(/[\u0000-\u001f\u007f<>:"/\\|?*]+/g, '-')
+    .replace(/[<>:"/\\|?*]+/g, '-')
     .replace(/\s+/g, '-')
     .replace(/-{2,}/g, '-')
     .replace(/^[-.\s]+|[-.\s]+$/g, '');
