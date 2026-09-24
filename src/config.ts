@@ -4,7 +4,7 @@
  */
 export const APP_NAME = 'Cutout';
 
-export const REPO_URL = 'https://github.com/timowse/Hintergrund-entfernen';
+export const REPO_URL = 'https://github.com/timowse/Cutout';
 export const LICENSE_URL = `${REPO_URL}/blob/main/LICENSE`;
 
 /**

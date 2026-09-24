@@ -147,7 +147,8 @@ Pages. No secrets are needed.
 
 One-time setup: **Settings → Pages → Build and deployment → Source: GitHub
 Actions**. The site is then available at
-`https://<user>.github.io/Hintergrund-entfernen/`.
+`https://cutout.t1mo.dev/`
+(or `https://<user>.github.io/Cutout/` without a custom domain).
 
 The build uses relative paths, so the same files also work on a custom domain
 (add it under Settings → Pages) or any other static host. The model is not
