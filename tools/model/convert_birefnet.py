@@ -617,7 +617,7 @@ def main() -> None:
         raise SystemExit("Nodes exceed the WebGPU buffer limit:\n  " + "\n  ".join(too_wide))
     stats = compress_weights(model, args.weights)
     log(f"Weights: {stats}")
-    model.producer_name = "hintergrund-entfernen/convert_birefnet.py"
+    model.producer_name = "cutout/convert_birefnet.py"
     model.doc_string = (
         f"Derived from {SOURCE['url']} (sha256 {SOURCE['sha256']}). "
         f"{SOURCE['license']} License, {SOURCE['copyright']}."
