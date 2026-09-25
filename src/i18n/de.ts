@@ -13,6 +13,10 @@ export const de: Messages = {
   'theme.dark': 'Farbschema: dunkel',
 
   'hero.title': 'Bildhintergründe sofort entfernen.',
+  'crash.model':
+    'Die Seite wurde neu geladen, während das KI-Modell geladen wurde – vermutlich hat der Arbeitsspeicher des Geräts nicht gereicht. Das Modell wird jetzt erst geladen, wenn du ein Bild auswählst. Andere Tabs und Apps zu schließen kann helfen.',
+  'crash.image':
+    'Die Seite wurde neu geladen, während ein Bild bearbeitet wurde – vermutlich hat der Arbeitsspeicher des Geräts nicht gereicht. Große Fotos werden deshalb vorerst auf etwa 6 Megapixel verkleinert. Andere Tabs und Apps zu schließen kann helfen.',
   'drop.title': 'Bild hierher ziehen',
   'drop.or': 'oder',
   'drop.choose': 'Bild auswählen',

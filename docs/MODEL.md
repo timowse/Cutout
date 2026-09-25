@@ -15,7 +15,7 @@ GitHub release of the BiRefNet author, converted for the browser by
 | Weights licence | MIT (released by the author in the same repository / release) |
 | Parameters | 44.6 M |
 | Input / output | 1 × 3 × 1024 × 1024 (ImageNet-normalised RGB) → 1 × 1 × 1024 × 1024 alpha matte |
-| Browser model | 92.5 MB (float16 weight storage), 4 chunks of ≤ 24 MiB, SHA-256 per chunk |
+| Browser model | 92.9 MB (float16 weight storage), 4 chunks of ≤ 24 MiB, SHA-256 per chunk |
 
 ## Candidates
 
@@ -48,34 +48,81 @@ All steps are deterministic and verified numerically against the original file.
 
 1. **Download + verify** the official file (pinned URL and SHA-256).
 2. **Deformable convolutions** → equivalent memory-lean subgraphs. For each
-   group of kernel taps: compute the four bilinear sample indices into a
-   zero-padded copy of the input, `Gather` the samples, weight them with the
-   bilinear factors × modulation mask, `ReduceSum`, and accumulate with a
-   `MatMul` against the corresponding slice of the convolution weights. Taps are
-   grouped so that no intermediate exceeds 32 MB. Offset and modulator
-   convolutions are kept unchanged.
+   group of kernel taps and each of the four bilinear corners: compute the
+   sample indices (int32) into a zero-padded copy of the input, `Gather` the
+   samples and weight them with the bilinear factor × modulation mask; the four
+   corners are summed and accumulated with a `MatMul` against the corresponding
+   slice of the convolution weights. Taps are grouped so that no gathered
+   tensor exceeds 16 MB. Offset and modulator convolutions are kept unchanged.
 3. **Patch rearrangement** → one `Reshape → Transpose → Reshape`
    (`out[(j·gh + i)·C + c, y, x] = img[c, i·ph + y, j·pw + x]`). The script
    checks the exact patch order of the original graph before rewriting and
    refuses to continue if it differs.
-4. **Sigmoid** appended so the model returns the alpha matte (`alpha`) directly.
-5. **Weight storage** in float16 with `Cast` nodes; ONNX Runtime folds the casts
-   when the session is created, so all maths runs in float32.
-6. **Check** that no node needs more than 8 GPU buffers, `onnx.checker`, chunking
+4. **Memory rewrites** (exact linear algebra, needed for phones). The decoder
+   ends with `Concat(Resize(96 ch), 24 ch)` at 1024 × 1024 followed by a 1 × 1
+   convolution to one channel — a single 480 MiB tensor next to 384 MiB and
+   256 MiB ones. The converter
+   - splits a 1 × 1 convolution over a concatenation into a sum of 1 × 1
+     convolutions over the parts (also used for the 1280-channel ASPP concat),
+   - moves a channel-reducing 1 × 1 convolution in front of a bilinear resize
+     (both are linear and the resize weights sum to one),
+   - folds a 1 × 1 convolution into the convolution before it
+     (`W = W₂·W₁`, `b = W₂·b₁ + b₂`), and
+   - computes a convolution → convolution intermediate that is still larger
+     than 64 MiB in channel chunks.
+
+   The largest intermediate tensor drops from 480 MiB to 96 MiB, and the live
+   activations along ONNX Runtime's execution order from ~960 MiB to
+   ~300 MiB.
+5. **Sigmoid** appended so the model returns the alpha matte (`alpha`) directly.
+6. **Weight storage** in float16 with `Cast` nodes, so all maths runs in
+   float32. On WebGPU, ONNX Runtime folds the casts when the session is
+   created; on the CPU the app disables constant folding (see below).
+7. **Check** that no node needs more than 8 GPU buffers, `onnx.checker`, chunking
    into ≤ 24 MiB files (fits GitHub, Cloudflare Pages and most CDNs) plus
    `manifest.json` with SHA-256 hashes and `LICENSE.txt`.
 
 ### Verification (ONNX Runtime 1.30, CPU, 4 scikit-image test photos)
 
-| Variant | Size | Max. difference to original | Mean difference | Pixels off by > 1/255 | Peak RAM |
-| --- | --- | --- | --- | --- | --- |
-| Original export (fp32) | 224 MB | — | — | — | 12.2 GB |
-| Converted, fp32 weights | 182 MB | 4.2 × 10⁻⁵ | < 10⁻⁷ | 0 % | 1.8 GB* |
-| **Converted, fp16 weights (shipped)** | **92.5 MB** | 1.6 × 10⁻² | ≤ 2.3 × 10⁻⁵ | ≤ 0.15 % | 1.8 GB* |
-| Converted, int8 per-channel weights | 49 MB | 0.44 | ≤ 9.7 × 10⁻⁴ | up to 6.3 % (1 % > 5/255) | — |
+| Variant | Size | Max. difference to original | Mean difference | Pixels off by > 1/255 |
+| --- | --- | --- | --- | --- |
+| Original export (fp32) | 224 MB | — | — | — |
+| Converted, fp32 weights | 182 MB | 3.8 × 10⁻⁵ | < 10⁻⁷ | 0 % |
+| **Converted, fp16 weights (shipped)** | **92.9 MB** | 1.6 × 10⁻² | ≤ 2.3 × 10⁻⁵ | ≤ 0.15 % |
+| Converted, int8 per-channel weights | 49 MB | 0.44 | ≤ 9.7 × 10⁻⁴ | up to 6.3 % (1 % > 5/255) |
 
-\* without ONNX Runtime's CPU memory arena; with the arena the process peaks at
-~3.2 GB because the arena grows in large steps.
+The memory rewrites do not change the result (the fp32 and fp16 figures are
+the same as without them).
+
+### Memory in the browser
+
+The original export needs 12.2 GB of RAM (ONNX Runtime, CPU). Measured with
+ONNX Runtime Web 1.30 (WebAssembly, one 1024 × 1024 inference) and in
+headless Chromium (whole tab, WebAssembly path):
+
+| | First browser version | Now |
+| --- | --- | --- |
+| Largest intermediate tensor | 480 MiB | 96 MiB |
+| WebAssembly heap after loading the model | 597 MB | 291 MB |
+| WebAssembly heap after one image | 2296 MB | 844 MB |
+| Browser tab after a 12 MP photo | 2.66 GB | 1.27 GB |
+
+Three things matter, all measured:
+
+- the memory rewrites above;
+- no CPU memory arena (`enableCpuMemArena: false`; the arena grows in large
+  steps, ~3.2 GB);
+- no constant folding on the CPU backend. WebAssembly memory never shrinks,
+  and with constant folding the heap grows far beyond the live tensors
+  (1.38 GB instead of 0.84 GB, same speed). Without it the float16 weights
+  also stay float16 in memory and are widened layer by layer. WebGPU keeps
+  constant folding: unfolded shape computations would cause GPU → CPU round
+  trips.
+
+The price is a slower session start on the CPU (≈ 5.8 s instead of 3 s on the
+development machine); it happens during the background preload. Gathering
+deformable-convolution samples in 32 MB instead of 16 MB groups would save
+≈ 0.9 s but needs 130 MB more heap.
 
 The patch rewrite is bit-identical to the version without it and halves session
 creation time (fewer nodes). int8 weights were rejected because they visibly
@@ -101,7 +148,7 @@ Cache Storage under a name derived from the model hash; old versions are removed
 when a new model is deployed.
 
 GitHub Pages has a soft bandwidth limit of 100 GB per month, i.e. roughly one
-thousand first-time visitors who actually process an image. If the site grows
+thousand first-time visitors (the model is preloaded when the page opens). If the site grows
 beyond that, set `VITE_MODEL_BASE_URL` to a CDN or Hugging Face repository
 (pinned revision) and add that origin to the CSP's `connect-src`.
 

@@ -11,6 +11,10 @@ export const en = {
   'theme.dark': 'Theme: dark',
 
   'hero.title': 'Remove image backgrounds instantly.',
+  'crash.model':
+    'The page was reloaded while the AI model was loading – probably because this device ran out of memory. The model now only loads when you choose an image. Closing other tabs and apps can help.',
+  'crash.image':
+    'The page was reloaded while an image was being processed – probably because this device ran out of memory. Large photos are reduced to about 6 megapixels for now. Closing other tabs and apps can help.',
   'drop.title': 'Drop an image here',
   'drop.or': 'or',
   'drop.choose': 'Choose image',
