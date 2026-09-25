@@ -119,6 +119,13 @@ export class View {
     this.colorInput.hidden = choice !== 'custom';
   }
 
+  /** Explains why the page reloaded after the browser ended it while busy. */
+  showCrashNotice(stage: 'model' | 'image'): void {
+    const notice = byId('crash-notice');
+    notice.textContent = t(stage === 'image' ? 'crash.image' : 'crash.model');
+    notice.hidden = false;
+  }
+
   showToast(text: string): void {
     this.toast.textContent = text;
     this.toast.classList.add('visible');
