@@ -3,10 +3,12 @@ import './styles/main.css';
 import ortWasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.wasm?url';
 import ortWebGPUWasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
 import { Controller } from './app/controller';
+import { CrashGuard } from './app/crash-guard';
 import { detectFeatures, wasmThreads } from './app/features';
 import { setupInput } from './app/input';
 import { registerServiceWorker } from './app/pwa';
 import { initTheme } from './app/theme';
+import { busyActivity } from './app/state';
 import { View } from './app/view';
 import { InferenceClient } from './app/worker-client';
 import { APP_NAME, LICENSE_URL, MODEL_BASE_URL, REPO_URL } from './config';
@@ -38,7 +40,12 @@ const client = new InferenceClient({
   threads: wasmThreads(features),
 });
 
-const limits = computeLimits(features);
+// If the browser ended the page while the AI was working last time (iOS kills
+// tabs that run out of memory), do not preload the model again right away.
+const crashGuard = new CrashGuard();
+const crashed = crashGuard.takePrevious();
+
+const limits = computeLimits({ ...features, lowMemory: crashed?.stage === 'image' });
 const previewMaxSide = Math.min(
   4096,
   Math.ceil(Math.max(screen.width, screen.height, 1280) * Math.min(window.devicePixelRatio || 1, 2)),
@@ -64,6 +71,12 @@ const view = new View(
   features,
 );
 controller.attach(view);
+if (crashed) view.showCrashNotice(crashed.stage);
+controller.observe((state) => crashGuard.update(busyActivity(state)));
+window.addEventListener('pagehide', () => crashGuard.update(null));
+window.addEventListener('pageshow', (e) => {
+  if (e.persisted) crashGuard.update(busyActivity(controller.getState()));
+});
 
 document.documentElement.dataset.ready = 'true';
 
@@ -79,7 +92,7 @@ registerServiceWorker(mayReloadForIsolation);
 // open, so the first image is processed right away. Skipped when the browser
 // asks to save data; the model then loads with the first image.
 const saveData = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
-if (!saveData && !params.has('nopreload')) {
+if (!saveData && !crashed && !params.has('nopreload')) {
   const firstVisit = import.meta.env.PROD && 'serviceWorker' in navigator && !navigator.serviceWorker.controller;
   const delay = firstVisit && !crossOriginIsolated && !features.webgpu ? 2500 : 300;
   const start = () => window.setTimeout(() => controller.warmUp(), delay);

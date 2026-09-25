@@ -152,3 +152,11 @@ export function reduce(state: AppState, event: AppEvent): AppState {
       };
   }
 }
+
+/** What heavy work is running right now (for the crash guard), or null. */
+export function busyActivity(state: AppState): { stage: 'model' | 'image'; backend?: Backend } | null {
+  if (isBusy(state.view)) {
+    return state.model.kind === 'ready' ? { stage: 'image', backend: state.model.backend } : { stage: 'image' };
+  }
+  return state.model.kind === 'loading' ? { stage: 'model' } : null;
+}

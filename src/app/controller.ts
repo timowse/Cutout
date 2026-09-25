@@ -31,6 +31,7 @@ export class Controller {
   private readonly pngWaiters = new Map<number, ((png: Blob | null) => void)[]>();
   private readonly bgRequests = new Map<number, (png: Blob | null) => void>();
   private nextBgRequest = 1;
+  private readonly observers: ((state: AppState) => void)[] = [];
 
   constructor(
     private readonly client: InferenceClient,
@@ -50,6 +51,11 @@ export class Controller {
     return this.state;
   }
 
+  /** Calls `fn` after every state change. */
+  observe(fn: (state: AppState) => void): void {
+    this.observers.push(fn);
+  }
+
   private dispatch(event: AppEvent): void {
     const prev = this.state;
     this.state = reduce(prev, event);
@@ -57,6 +63,7 @@ export class Controller {
       this.releaseStaleResources();
       this.view?.render(this.state, prev);
       document.documentElement.dataset.model = this.state.model.kind === 'ready' ? this.state.model.backend : this.state.model.kind;
+      for (const fn of this.observers) fn(this.state);
     }
   }
 

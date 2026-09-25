@@ -215,6 +215,84 @@ test('?nopreload waits for the first image before loading the model', async ({ p
   expect(modelRequests).toHaveLength(1);
 });
 
+const busyMarker = (page: import('@playwright/test').Page) => page.evaluate(() => localStorage.getItem('cutout.busy'));
+
+/** Pretends that the browser killed the page while it was busy (as iOS does when memory runs out). */
+async function simulateCrash(page: import('@playwright/test').Page, stage: 'model' | 'image') {
+  await page.addInitScript((s) => {
+    if (sessionStorage.getItem('crash-seeded')) return;
+    sessionStorage.setItem('crash-seeded', '1');
+    localStorage.setItem('cutout.busy', JSON.stringify({ stage: s, at: Date.now() }));
+  }, stage);
+}
+
+test('a marker is kept only while the AI is working', async ({ page }) => {
+  await page.route('**/models/birefnet-lite/model.onnx.part00', async (route) => {
+    await new Promise((r) => setTimeout(r, 1500));
+    await route.fallback();
+  });
+  await page.goto('./');
+  await expect.poll(() => busyMarker(page)).toContain('"stage":"model"');
+  await expect(page.locator('#model-chip')).toHaveAttribute('data-state', 'ready');
+  expect(await busyMarker(page)).toBeNull();
+  await page.locator('#file-input').setInputFiles(image('animal-cat.jpg'));
+  await waitForResult(page);
+  expect(await busyMarker(page)).toBeNull();
+});
+
+test('after a crash while loading the model, the page explains it and does not preload', async ({ page }) => {
+  const modelRequests: string[] = [];
+  page.on('request', (r) => {
+    if (r.url().includes('model.onnx')) modelRequests.push(r.url());
+  });
+  await simulateCrash(page, 'model');
+  await page.goto('./');
+  const notice = page.locator('#crash-notice');
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText('ran out of memory');
+  await page.waitForTimeout(1000);
+  expect(modelRequests).toHaveLength(0);
+  await expect(page.locator('#model-chip')).toBeHidden();
+
+  await page.locator('#file-input').setInputFiles(image('animal-cat.jpg'));
+  await waitForResult(page);
+  await expect(page.locator('#scaled-note')).toBeHidden();
+
+  // The next visit is back to normal.
+  await page.reload();
+  await expect(notice).toBeHidden();
+  await expect(page.locator('#model-chip')).toHaveAttribute('data-state', 'ready');
+});
+
+test('after a crash while processing, large photos are reduced to about 6 MP', async ({ page }) => {
+  await simulateCrash(page, 'image');
+  await page.goto('./');
+  await expect(page.locator('#crash-notice')).toContainText('6 megapixels');
+  const jpeg = await page.evaluate(async () => {
+    const canvas = new OffscreenCanvas(3200, 2400);
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#6a9';
+    ctx.fillRect(0, 0, 3200, 2400);
+    ctx.fillStyle = '#123';
+    ctx.beginPath();
+    ctx.arc(1600, 1200, 700, 0, Math.PI * 2);
+    ctx.fill();
+    const bytes = new Uint8Array(await (await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.9 })).arrayBuffer());
+    let s = '';
+    for (const b of bytes) s += String.fromCharCode(b);
+    return btoa(s);
+  });
+  await page.locator('#file-input').setInputFiles({ name: 'large.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(jpeg, 'base64') });
+  await waitForResult(page);
+  await expect(page.locator('#scaled-note')).toBeVisible();
+  // e.g. "2,828 × 2,121 px · PNG"
+  const meta = (await page.locator('#result-meta').textContent()) ?? '';
+  const [width, height] = meta.split(' px')[0]!.split('×').map((v) => Number(v.replace(/\D/g, '')));
+  expect(width! * height!).toBeLessThanOrEqual(6_000_000);
+  expect(width! * height!).toBeGreaterThan(5_000_000);
+  expect(width! / height!).toBeCloseTo(4 / 3, 2);
+});
+
 test('German browsers get the German interface', async ({ browser }) => {
   const context = await browser.newContext({ locale: 'de-DE' });
   const page = await context.newPage();
