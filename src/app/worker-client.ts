@@ -72,6 +72,10 @@ export class InferenceClient {
     if (this.worker) this.send({ type: 'RELEASE_RESULT', jobId });
   }
 
+  cropResult(message: Omit<Extract<WorkerRequest, { type: 'CROP_RESULT' }>, 'type'>): void {
+    this.send({ type: 'CROP_RESULT', ...message });
+  }
+
   renderWithBackground(message: Omit<Extract<WorkerRequest, { type: 'RENDER_WITH_BACKGROUND' }>, 'type'>): void {
     this.send({ type: 'RENDER_WITH_BACKGROUND', ...message });
   }

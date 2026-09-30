@@ -4,6 +4,7 @@ import ortWasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.wasm?url';
 import ortWebGPUWasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
 import { Controller } from './app/controller';
 import { CrashGuard } from './app/crash-guard';
+import { HistoryStore } from './app/history';
 import { detectFeatures, wasmThreads } from './app/features';
 import { setupInput } from './app/input';
 import { registerServiceWorker } from './app/pwa';
@@ -67,11 +68,14 @@ const view = new View(
     retryModel: () => controller.warmUp(),
     copy: () => void controller.copy(),
     downloadWithBackground: (color, background) => controller.downloadWithBackground(color, background),
+    crop: (rect, rerun) => controller.applyCrop(rect, rerun),
+    clearHistory: () => void controller.clearHistory(),
   },
   features,
 );
 controller.attach(view);
 if (crashed) view.showCrashNotice(crashed.stage);
+void HistoryStore.open().then((store) => controller.setHistory(store));
 controller.observe((state) => crashGuard.update(busyActivity(state)));
 window.addEventListener('pagehide', () => crashGuard.update(null));
 window.addEventListener('pageshow', (e) => {

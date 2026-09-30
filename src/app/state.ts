@@ -5,12 +5,17 @@
  * what keeps a slow result for image A from ever appearing after image B.
  */
 
+import type { Rect } from '../shared/crop';
 import type { Backend, ErrorCode, ModelPhase, ProcessStage } from '../shared/protocol';
 
 export interface SourceImage {
   name: string;
   /** Object URL of the original file, for the instant preview. */
   url: string;
+  /** The part of the original that is shown and processed (normalised, see shared/crop.ts). */
+  region: Rect;
+  /** False for a cropped result: show it at once instead of wiping it in. */
+  reveal: boolean;
 }
 
 export interface ResultInfo {

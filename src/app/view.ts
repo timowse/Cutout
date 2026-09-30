@@ -1,11 +1,14 @@
 /** Renders the application state into the static markup of index.html. */
 
 import { formatMB, formatNumber, t, type MessageKey } from '../i18n';
+import { FULL, type Rect } from '../shared/crop';
 import { outputFileName } from '../shared/filename';
 import type { ErrorCode, RGB } from '../shared/protocol';
 import { CompareSlider } from './compare';
+import { CropEditor } from './crop-editor';
+import type { HistoryEntry } from './history';
 import type { Features } from './features';
-import type { AppState, ModelStatus, ViewState } from './state';
+import { currentJobId, type AppState, type ModelStatus, type ViewState } from './state';
 
 export interface ViewHandlers {
   choose(): void;
@@ -15,6 +18,9 @@ export interface ViewHandlers {
   retry(): void;
   copy(): void;
   downloadWithBackground(color: RGB, background: 'white' | 'black' | { hex: string }): void;
+  /** `rect` is normalised to the whole original; `rerun` runs the model on it again. */
+  crop(rect: Rect, rerun: boolean): void;
+  clearHistory(): void;
 }
 
 export type BackgroundChoice = 'transparent' | 'white' | 'black' | 'custom';
@@ -32,6 +38,23 @@ function byId(id: string): HTMLElement {
   const el = document.getElementById(id);
   if (!el) throw new Error(`Missing element #${id}`);
   return el;
+}
+
+/** Saves a blob as a file (the object URL is kept briefly for slow browsers). */
+function downloadBlob(blob: Blob, name: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.rel = 'noopener';
+  document.body.append(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+function sameRect(a: Rect, b: Rect): boolean {
+  return Math.abs(a.x - b.x) < 1e-4 && Math.abs(a.y - b.y) < 1e-4 && Math.abs(a.w - b.w) < 1e-4 && Math.abs(a.h - b.h) < 1e-4;
 }
 
 export function hexToRgb(hex: string): RGB {
@@ -63,6 +86,12 @@ export class View {
   private readonly retryButton = byId('retry-button') as HTMLButtonElement;
   private readonly toast = byId('toast');
   private readonly compare: CompareSlider;
+  private readonly cropEditor: CropEditor;
+  /** Set while the crop editor is open: 'source' crops before, 'result' after background removal. */
+  private cropping: { mode: 'source' | 'result'; url: string; returnFocus: HTMLElement | null } | null = null;
+  private lastState: AppState | null = null;
+  private shownRegion = '';
+  private historyUrls: string[] = [];
   private readonly bitmapContext: ImageBitmapRenderingContext | null;
   private drawnJob: number | null = null;
   private chipRendered = false;
@@ -74,7 +103,36 @@ export class View {
     private readonly features: Features,
   ) {
     this.compare = new CompareSlider(this.frame, byId('compare-range') as HTMLInputElement);
+    this.cropEditor = new CropEditor(byId('crop-layer'), byId('crop-box'));
     this.bitmapContext = this.canvas.getContext('bitmaprenderer');
+
+    byId('history-clear').addEventListener('click', () => handlers.clearHistory());
+    byId('crop-before-button').addEventListener('click', () => this.openCrop('source'));
+    byId('crop-button').addEventListener('click', () => this.openCrop('result'));
+    byId('crop-cancel-button').addEventListener('click', () => this.closeCrop(true));
+    byId('crop-all-button').addEventListener('click', () => this.cropEditor.selectAll());
+    byId('crop-apply-button').addEventListener('click', () => {
+      const session = this.cropping;
+      if (!session) return;
+      const rerun = session.mode === 'source' || (byId('crop-rerun') as HTMLInputElement).checked;
+      const rect = this.cropEditor.value;
+      const view = this.lastState?.view;
+      const shown = view && 'source' in view ? view.source?.region : undefined;
+      if (!rerun && shown && sameRect(rect, shown)) {
+        this.closeCrop(true); // nothing changed
+        return;
+      }
+      this.closeCrop(false);
+      handlers.crop(rect, rerun);
+    });
+    for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="crop-ratio"]')) {
+      radio.addEventListener('change', () => {
+        if (radio.checked) this.cropEditor.setRatio(radio.value === 'free' ? null : Number(radio.value));
+      });
+    }
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.cropping) this.closeCrop(true);
+    });
 
     byId('choose-button').addEventListener('click', () => handlers.choose());
     byId('model-chip-retry').addEventListener('click', () => handlers.retryModel());
@@ -124,6 +182,39 @@ export class View {
     const notice = byId('crash-notice');
     notice.textContent = t(stage === 'image' ? 'crash.image' : 'crash.model');
     notice.hidden = false;
+  }
+
+  /** The mini gallery of recent results; a click downloads the PNG again. */
+  renderHistory(entries: HistoryEntry[]): void {
+    for (const url of this.historyUrls) URL.revokeObjectURL(url);
+    this.historyUrls = [];
+    const list = byId('history-list');
+    list.replaceChildren(
+      ...entries.map((entry) => {
+        const thumbUrl = URL.createObjectURL(entry.thumb);
+        this.historyUrls.push(thumbUrl);
+        const item = document.createElement('li');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'history-item';
+        const label = t('history.download', {
+          name: entry.name,
+          width: formatNumber(entry.width),
+          height: formatNumber(entry.height),
+        });
+        button.setAttribute('aria-label', label);
+        button.title = label;
+        const img = document.createElement('img');
+        img.src = thumbUrl;
+        img.alt = '';
+        img.decoding = 'async';
+        button.append(img);
+        button.addEventListener('click', () => downloadBlob(entry.png, entry.name));
+        item.append(button);
+        return item;
+      }),
+    );
+    byId('history').hidden = entries.length === 0;
   }
 
   showToast(text: string): void {
@@ -183,10 +274,65 @@ export class View {
     retry.hidden = model.kind !== 'error';
   }
 
+  /** Opens the crop editor on the whole original, with the part shown now selected. */
+  private openCrop(mode: 'source' | 'result'): void {
+    const view = this.lastState?.view;
+    const source = view && 'source' in view ? view.source : null;
+    const { naturalWidth: w, naturalHeight: h } = this.original;
+    if (!source || !(w > 0 && h > 0) || this.cropping) return;
+    this.cropping = { mode, url: source.url, returnFocus: document.activeElement as HTMLElement | null };
+    this.root.dataset.cropping = mode;
+    this.compare.setEnabled(false);
+    this.compare.set(100);
+    this.setRegion(FULL, w, h);
+    byId('crop-rerun-option').hidden = mode !== 'result';
+    (byId('crop-rerun') as HTMLInputElement).checked = false;
+    byId('crop-hint').hidden = mode !== 'source';
+    this.cropEditor.open(source.region, w / h);
+  }
+
+  /** Closes the editor; `restore` puts the previous view back (cancel). */
+  private closeCrop(restore: boolean): void {
+    const session = this.cropping;
+    if (!session) return;
+    this.cropping = null;
+    this.cropEditor.close();
+    delete this.root.dataset.cropping;
+    this.shownRegion = '';
+    if (restore && this.lastState) {
+      this.render(this.lastState, this.lastState);
+      const view = this.lastState.view;
+      if (view.kind === 'complete' && this.drawnJob === view.jobId) {
+        this.compare.setEnabled(true);
+        this.compare.set(0);
+      }
+      session.returnFocus?.focus({ preventScroll: true });
+    }
+  }
+
+  /** Shows `region` of the original (w × h pixels) and sizes the frame for it. */
+  private setRegion(region: Rect, w: number, h: number): void {
+    const key = `${region.x},${region.y},${region.w},${region.h}`;
+    this.frame.style.setProperty('--cx', String(region.x));
+    this.frame.style.setProperty('--cy', String(region.y));
+    this.frame.style.setProperty('--cw', String(region.w));
+    this.frame.style.setProperty('--ch', String(region.h));
+    if (w > 0 && h > 0) this.setAspect(w * region.w, h * region.h);
+    this.shownRegion = key;
+  }
+
   render(state: AppState, prev: AppState): void {
     if (state.model !== prev.model || !this.chipRendered) {
       this.chipRendered = true;
       this.renderModelChip(state.model);
+    }
+    this.lastState = state;
+    if (this.cropping) {
+      // Keep the editor open while the same image is still on screen; the
+      // rest of the view catches up when it closes.
+      const current = 'source' in state.view ? state.view.source : null;
+      if (current?.url === this.cropping.url && state.view.kind !== 'error') return;
+      this.closeCrop(false);
     }
     const view = state.view;
     const name = view.kind === 'cancelled' ? 'idle' : view.kind;
@@ -204,13 +350,23 @@ export class View {
     this.stage.hidden = !source;
     if (source && this.original.dataset.src !== source.url) {
       this.clearResult();
+      this.shownRegion = '';
       this.original.dataset.src = source.url;
       this.original.onload = () => {
-        if (this.drawnJob === null && this.original.naturalWidth > 0) {
-          this.setAspect(this.original.naturalWidth, this.original.naturalHeight);
+        const current = this.lastState?.view;
+        const region = current && 'source' in current && current.source ? current.source.region : source.region;
+        if (this.drawnJob === null && this.original.naturalWidth > 0 && !this.cropping) {
+          this.setRegion(region, this.original.naturalWidth, this.original.naturalHeight);
         }
       };
       this.original.src = source.url;
+    }
+    if (source) {
+      const key = `${source.region.x},${source.region.y},${source.region.w},${source.region.h}`;
+      if (key !== this.shownRegion || this.drawnJob !== currentJobId(view)) {
+        if (this.drawnJob !== null && this.drawnJob !== currentJobId(view)) this.clearResult();
+        this.setRegion(source.region, this.original.naturalWidth, this.original.naturalHeight);
+      }
     }
 
     switch (view.kind) {
@@ -308,7 +464,8 @@ export class View {
       this.canvas.height = result.preview.height;
       this.bitmapContext?.transferFromImageBitmap(result.preview);
       this.compare.setEnabled(true);
-      this.compare.reveal();
+      if (source.reveal) this.compare.reveal();
+      else this.compare.set(0);
       this.statusText.textContent = '';
       byId('sr-status').textContent = t('result.ready');
       const active = document.activeElement;

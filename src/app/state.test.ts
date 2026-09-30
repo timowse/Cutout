@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { initialState, isBusy, reduce, type AppEvent, type AppState } from './state';
 
-const source = (name: string) => ({ name, url: `blob:${name}` });
+const source = (name: string) => ({ name, url: `blob:${name}`, region: { x: 0, y: 0, w: 1, h: 1 }, reveal: true });
 const preview = { preview: {} as ImageBitmap, width: 10, height: 10, originalWidth: 10, originalHeight: 10 };
 
 function run(events: AppEvent[], state: AppState = initialState): AppState {

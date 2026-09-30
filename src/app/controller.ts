@@ -5,18 +5,24 @@
  */
 
 import { t } from '../i18n';
+import { clampRect, contains, FULL, isFull, relativeTo, type Rect } from '../shared/crop';
 import { exceedsInputLimit } from '../shared/dimensions';
 import { inspectImageFile, MAX_FILE_BYTES } from '../shared/files';
 import { outputFileName, type BackgroundName } from '../shared/filename';
 import type { ImageLimits, RGB, WorkerResponse } from '../shared/protocol';
 import { missingRequirement, type Features } from './features';
+import { makeThumbnail, type HistoryStore } from './history';
 import { currentJobId, initialState, isBusy, reduce, type AppEvent, type AppState } from './state';
 import type { View } from './view';
 import type { InferenceClient } from './worker-client';
 
 interface JobResources {
+  /** Object URL of the original; handed on to the next job of the same file (then empty). */
   sourceUrl: string;
+  file: File;
   preview?: ImageBitmap;
+  /** Thumbnail for the history, made from the preview. */
+  thumb?: Promise<Blob | null>;
   pngUrl?: string;
   extraUrls: string[];
 }
@@ -26,7 +32,12 @@ export class Controller {
   private view: View | null = null;
   private nextJobId = 1;
   private inputSeq = 0;
-  private lastFile: File | null = null;
+  /**
+   * The image on screen: its file, the part the model processed, the part
+   * shown, and its history entry (new versions of it replace that entry).
+   */
+  private session: { file: File; processed: Rect; shown: Rect; historyId?: number } | null = null;
+  private history: HistoryStore | null = null;
   private readonly resources = new Map<number, JobResources>();
   private readonly pngWaiters = new Map<number, ((png: Blob | null) => void)[]>();
   private readonly bgRequests = new Map<number, (png: Blob | null) => void>();
@@ -51,6 +62,51 @@ export class Controller {
     return this.state;
   }
 
+  /** Connects the on-device history (opened asynchronously at start-up). */
+  setHistory(store: HistoryStore | null): void {
+    this.history = store;
+    void this.refreshHistory();
+  }
+
+  private async refreshHistory(): Promise<void> {
+    if (!this.history) return;
+    try {
+      this.view?.renderHistory(await this.history.list());
+    } catch (err) {
+      console.warn('[history]', err);
+    }
+  }
+
+  async clearHistory(): Promise<void> {
+    if (!this.history) return;
+    try {
+      await this.history.clear();
+      if (this.session) delete this.session.historyId;
+      this.view?.showToast(t('history.cleared'));
+    } catch (err) {
+      console.warn('[history]', err);
+    }
+    await this.refreshHistory();
+  }
+
+  /** Saves a finished result to the on-device history. */
+  private async remember(jobId: number, png: Blob, width: number, height: number): Promise<void> {
+    const store = this.history;
+    const session = this.session;
+    const res = this.resources.get(jobId);
+    const view = this.state.view;
+    if (!store || !session || !res?.thumb || view.kind !== 'complete' || view.jobId !== jobId) return;
+    const name = outputFileName(view.source.name);
+    try {
+      const thumb = await res.thumb;
+      if (!thumb) return;
+      session.historyId = await store.save({ name, created: Date.now(), width, height, png, thumb }, session.historyId);
+    } catch (err) {
+      console.warn('[history] not saved', err);
+    }
+    await this.refreshHistory();
+  }
+
   /** Calls `fn` after every state change. */
   observe(fn: (state: AppState) => void): void {
     this.observers.push(fn);
@@ -72,7 +128,7 @@ export class Controller {
     const keep = currentJobId(this.state.view);
     for (const [jobId, res] of this.resources) {
       if (jobId === keep) continue;
-      URL.revokeObjectURL(res.sourceUrl);
+      if (res.sourceUrl) URL.revokeObjectURL(res.sourceUrl);
       if (res.pngUrl) URL.revokeObjectURL(res.pngUrl);
       for (const url of res.extraUrls) URL.revokeObjectURL(url);
       res.preview?.close();
@@ -120,13 +176,68 @@ export class Controller {
       return;
     }
 
+    this.session = { file, processed: FULL, shown: FULL };
+    this.startJob(FULL);
+  }
+
+  /** Runs the model on `crop` of the current file. */
+  private startJob(crop: Rect): void {
+    const session = this.session;
+    if (!session) return;
     this.supersede();
     const jobId = this.nextJobId++;
-    const sourceUrl = URL.createObjectURL(file);
-    this.resources.set(jobId, { sourceUrl, extraUrls: [] });
-    this.lastFile = file;
-    this.dispatch({ type: 'select', jobId, source: { name: file.name, url: sourceUrl } });
-    this.client.process({ jobId, file, limits: this.limits, previewMaxSide: this.previewMaxSide });
+    const sourceUrl = this.adoptSourceUrl(session.file);
+    this.resources.set(jobId, { sourceUrl, file: session.file, extraUrls: [] });
+    session.processed = crop;
+    session.shown = crop;
+    this.dispatch({ type: 'select', jobId, source: { name: session.file.name, url: sourceUrl, region: crop, reveal: true } });
+    this.client.process({
+      jobId,
+      file: session.file,
+      limits: this.limits,
+      previewMaxSide: this.previewMaxSide,
+      ...(isFull(crop) ? {} : { crop }),
+    });
+  }
+
+  /** Reuses the object URL of the job on screen if it shows the same file. */
+  private adoptSourceUrl(file: File): string {
+    const current = currentJobId(this.state.view);
+    const res = current === null ? undefined : this.resources.get(current);
+    if (res?.sourceUrl && res.file === file) {
+      const url = res.sourceUrl;
+      res.sourceUrl = '';
+      return url;
+    }
+    return URL.createObjectURL(file);
+  }
+
+  /**
+   * Crops the image on screen to `rect` (normalised to the whole original).
+   * A finished result is cropped at once when the model already covered that
+   * part; otherwise, or with `rerun`, the model runs on the new part.
+   */
+  applyCrop(rect: Rect, rerun: boolean): void {
+    const session = this.session;
+    const view = this.state.view;
+    if (!session || !('source' in view) || !view.source) return;
+    const target = clampRect(rect);
+    if (view.kind !== 'complete' || rerun || !contains(session.processed, target)) {
+      this.startJob(target);
+      return;
+    }
+    const jobId = this.nextJobId++;
+    const sourceUrl = this.adoptSourceUrl(session.file);
+    this.resources.set(jobId, { sourceUrl, file: session.file, extraUrls: [] });
+    session.shown = target;
+    // Sent before the state change, which releases the previous result.
+    this.client.cropResult({
+      jobId,
+      fromJobId: view.jobId,
+      rect: relativeTo(session.processed, target),
+      previewMaxSide: this.previewMaxSide,
+    });
+    this.dispatch({ type: 'select', jobId, source: { ...view.source, url: sourceUrl, region: target, reveal: false } });
   }
 
   /** Cancels the job on screen, if it is still running. */
@@ -149,11 +260,12 @@ export class Controller {
 
   startOver(): void {
     this.supersede();
+    this.session = null;
     this.dispatch({ type: 'reset' });
   }
 
   retry(): void {
-    if (this.lastFile) void this.handleFile(this.lastFile);
+    if (this.session) this.startJob(this.session.processed);
   }
 
   private waitForPng(jobId: number): Promise<Blob | null> {
@@ -231,6 +343,8 @@ export class Controller {
           break;
         }
         res.preview = msg.preview;
+        // Drawn now, before the view takes over the bitmap.
+        res.thumb = makeThumbnail(msg.preview);
         this.dispatch({
           type: 'preview',
           jobId: msg.jobId,
@@ -252,6 +366,7 @@ export class Controller {
         this.dispatch({ type: 'png', jobId: msg.jobId, png: msg.png, pngUrl: res.pngUrl });
         for (const resolve of this.pngWaiters.get(msg.jobId) ?? []) resolve(msg.png);
         this.pngWaiters.delete(msg.jobId);
+        void this.remember(msg.jobId, msg.png, msg.width, msg.height);
         break;
       }
       case 'PROCESS_ERROR':
