@@ -5,11 +5,13 @@
  * be interrupted, but its result is discarded).
  */
 
+import { isRect } from '../shared/crop';
 import { AppError, toWorkerError } from '../shared/errors';
 import { loadModel } from '../shared/model-loader';
 import type { Backend, ModelConfig, ModelManifest, ProcessTimings, WorkerRequest, WorkerResponse } from '../shared/protocol';
 import {
   composeResult,
+  cropDecoded,
   createPreview,
   decodeImage,
   encodeResult,
@@ -116,7 +118,12 @@ async function infer(state: ModelState, input: Float32Array): Promise<Float32Arr
 let latestJob = 0;
 const cancelled = new Set<number>();
 let queue: Promise<void> = Promise.resolve();
-let result: { jobId: number; image: DecodedImage } | null = null;
+/**
+ * The finished result on screen. `base` is what the model processed; `image`
+ * is the part that is shown and downloaded (the same object unless the result
+ * was cropped afterwards), so a later crop can still reach all of `base`.
+ */
+let result: { jobId: number; base: DecodedImage; image: DecodedImage } | null = null;
 
 class Superseded extends Error {}
 
@@ -136,7 +143,7 @@ async function processImage(msg: Extract<WorkerRequest, { type: 'PROCESS_IMAGE' 
     checkpoint(jobId);
     post({ type: 'PROCESS_PROGRESS', jobId, stage: 'decoding' });
     let t = performance.now();
-    const image = await decodeImage(msg.file, msg.limits);
+    const image = await decodeImage(msg.file, msg.limits, msg.crop && isRect(msg.crop) ? msg.crop : undefined);
     checkpoint(jobId);
     if (!modelPromise) throw new AppError('unknown', 'Model was not initialised');
     if (!modelReady) post({ type: 'PROCESS_PROGRESS', jobId, stage: 'waiting-for-model' });
@@ -159,21 +166,10 @@ async function processImage(msg: Extract<WorkerRequest, { type: 'PROCESS_IMAGE' 
     preview = await createPreview(image, msg.previewMaxSide);
     checkpoint(jobId);
     timings.refineMs = Math.round(performance.now() - t);
-    result = { jobId, image };
+    result = { jobId, base: image, image };
     const previewBitmap = preview;
     preview = null;
-    post(
-      {
-        type: 'PROCESS_PREVIEW',
-        jobId,
-        preview: previewBitmap,
-        width: image.width,
-        height: image.height,
-        originalWidth: image.originalWidth,
-        originalHeight: image.originalHeight,
-      },
-      [previewBitmap],
-    );
+    postPreview(jobId, previewBitmap, image);
 
     post({ type: 'PROCESS_PROGRESS', jobId, stage: 'encoding' });
     t = performance.now();
@@ -185,6 +181,60 @@ async function processImage(msg: Extract<WorkerRequest, { type: 'PROCESS_IMAGE' 
     preview?.close();
     if (err instanceof Superseded || isStale(jobId)) return;
     post({ type: 'PROCESS_ERROR', jobId, error: toWorkerError(err, 'inference-failed') });
+  }
+}
+
+function postPreview(jobId: number, preview: ImageBitmap, image: DecodedImage): void {
+  post(
+    {
+      type: 'PROCESS_PREVIEW',
+      jobId,
+      preview,
+      width: image.width,
+      height: image.height,
+      originalWidth: image.originalWidth,
+      originalHeight: image.originalHeight,
+    },
+    [preview],
+  );
+}
+
+/** Crops a finished result; `base` was taken from the result slot when the request arrived. */
+async function cropResult(
+  msg: Extract<WorkerRequest, { type: 'CROP_RESULT' }>,
+  base: DecodedImage | null,
+): Promise<void> {
+  const { jobId } = msg;
+  let preview: ImageBitmap | null = null;
+  try {
+    if (!base) throw new AppError('unknown', 'Result no longer available');
+    if (!isRect(msg.rect)) throw new AppError('unknown', 'Invalid crop');
+    checkpoint(jobId);
+    post({ type: 'PROCESS_PROGRESS', jobId, stage: 'refining' });
+    const t = performance.now();
+    const image = cropDecoded(base, msg.rect);
+    preview = await createPreview(image, msg.previewMaxSide);
+    checkpoint(jobId);
+    result = { jobId, base, image };
+    const previewBitmap = preview;
+    preview = null;
+    postPreview(jobId, previewBitmap, image);
+    post({ type: 'PROCESS_PROGRESS', jobId, stage: 'encoding' });
+    const png = await encodeResult(image.rgba, image.width, image.height);
+    checkpoint(jobId);
+    const encodeMs = Math.round(performance.now() - t);
+    post({
+      type: 'PROCESS_COMPLETE',
+      jobId,
+      png,
+      width: image.width,
+      height: image.height,
+      timings: { decodeMs: 0, inferenceMs: 0, refineMs: 0, encodeMs },
+    });
+  } catch (err) {
+    preview?.close();
+    if (err instanceof Superseded || isStale(jobId)) return;
+    post({ type: 'PROCESS_ERROR', jobId, error: toWorkerError(err) });
   }
 }
 
@@ -211,6 +261,14 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
       result = null;
       queue = queue.then(() => processImage(msg));
       break;
+    case 'CROP_RESULT': {
+      // Take the base now: the UI releases the previous job right after this message.
+      const base = result?.jobId === msg.fromJobId ? result.base : null;
+      latestJob = msg.jobId;
+      result = null;
+      queue = queue.then(() => cropResult(msg, base));
+      break;
+    }
     case 'CANCEL_JOB':
       cancelled.add(msg.jobId);
       if (result?.jobId === msg.jobId) result = null;

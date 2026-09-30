@@ -42,7 +42,7 @@ image runs in the visitor's browser.
    the reference preprocessing), ImageNet normalisation; transparent areas are
    flattened onto white.
 6. **Inference** (`runtime.ts`): ONNX Runtime Web, WebGPU if the adapter's
-   buffer limits fit the model's largest tensor (480 MiB), otherwise
+   buffer limits fit the model's largest tensor (96 MiB), otherwise
    WebAssembly (SIMD, multi-threaded when cross-origin isolated). A failure on
    WebGPU (unsupported operation, device loss) switches to WebAssembly and
    retries automatically.
@@ -65,6 +65,39 @@ other job, so a late result for image A can never replace image B. The worker
 drops superseded jobs at the next checkpoint (a running model inference cannot
 be interrupted, its result is discarded).
 
+## Cropping
+
+Crop rectangles are normalised to the whole (EXIF-oriented) original
+(`shared/crop.ts`). The controller remembers which part the model processed:
+
+- **Before / during processing** (`PROCESS_IMAGE` with `crop`): the worker
+  decodes only that part and runs the model on it, so a small subject gets the
+  full 1024 × 1024 model resolution.
+- **After** (`CROP_RESULT`): the worker keeps the full processed result as
+  `base` and cuts the requested part out of it — no second model run. Growing
+  beyond the processed part, or the option *Remove the background again for
+  this area*, runs the model again.
+
+The preview of a crop shows the original through CSS (`--cx/--cy/--cw/--ch`),
+so no extra copy of the photo is made.
+
+## Recent results
+
+`history.ts` stores the last 12 results (PNG + a 192 px thumbnail) in
+IndexedDB, only on this device, and deletes entries after 30 days. A cropped
+or recomputed version of the same image replaces its entry. Original images
+are never stored.
+
+## Crash recovery
+
+iOS Safari ends a tab that uses too much memory without any event and reloads
+it. `crash-guard.ts` keeps a small marker in `localStorage` (stage and time,
+never image data) while the model loads or an image is processed, and removes
+it when the work ends or on `pagehide`. A marker found at start-up means the
+previous visit was ended abruptly: the app explains this, does not preload the
+model (no crash loop), and if it happened during processing, limits results to
+about 6 MP for this visit.
+
 ## Resource cleanup
 
 When an image is replaced or dismissed, the controller revokes its object URLs
@@ -77,8 +110,9 @@ canvas and tells the worker to drop its full-resolution result.
 | --- | --- | --- |
 | App shell (HTML, JS, CSS, icons) | Service worker, precached | build id (hash of file names) |
 | ONNX Runtime (JS + WASM, 14–27 MB) | Service worker, cached on first use | fingerprinted file names |
-| AI model (92.5 MB) | Cache Storage `bgremove-model-<id>-<hash>` | model hash; old caches deleted |
-| Images | Memory only | gone on reload |
+| AI model (92.9 MB) | Cache Storage `bgremove-model-<id>-<hash>` | model hash; old caches deleted |
+| Original images | Memory only | gone on reload |
+| Recent results (last 12 PNGs) | IndexedDB `cutout` / `history` | deleted after 30 days or with *Clear history* |
 
 ## Security
 
