@@ -30,6 +30,12 @@ never leave your device**: the AI model runs locally in your browser.
 - **Download PNG**, **copy to clipboard**, before/after slider, background
   preview (transparent, white, black, custom colour) and *Download with
   background*.
+- **Crop** before or after removing the background (free or 1:1). While the AI
+  is still working, the crop is what the AI processes; a finished result is
+  cropped instantly, or optionally recomputed for the area for more detail.
+- **Recent results:** the last 12 cut-outs appear as a small gallery and can be
+  downloaded again with one click — stored only on this device (IndexedDB),
+  deleted after 30 days or with *Clear history*.
 - **WebGPU** acceleration with automatic **WebAssembly** fallback.
 - **Works offline** once the app and model are cached; installable as a PWA.
 - **The model loads in the background** as soon as the page is open (≈ 93 MB
@@ -48,11 +54,14 @@ never leave your device**: the AI model runs locally in your browser.
   analytics, no third-party scripts or fonts.
 - The Content-Security-Policy only allows network requests to the site's own
   origin (`connect-src 'self'`).
-- Images and results live in memory only and are gone on reload. The PNG
+- Original images live in memory only and are gone on reload. The PNG
   contains no metadata (no EXIF, no location).
-- Apart from the cached app and model, the browser only keeps the colour theme
-  and, while the AI is working, a small marker (no image data) that lets the
-  app notice if the browser ended the page.
+- The last 12 results (cut-out PNGs) are kept in the browser's IndexedDB on
+  this device for the *Recent* gallery — never uploaded, deleted after 30 days
+  or with *Clear history*.
+- Apart from that, the browser only keeps the cached app and model, the colour
+  theme and, while the AI is working, a small marker (no image data) that lets
+  the app notice if the browser ended the page.
 - The same policy also binds the background worker that processes the image
   (it is started in a way that inherits the page's policy).
 - End-to-end tests record every network request while an image is processed
@@ -116,9 +125,10 @@ Safari 16.4+ and Chrome for Android. WebGPU is used where available (Chrome/Edge
 113+, Safari 26, Firefox on Windows) and falls back to WebAssembly otherwise or
 on any WebGPU error. Unsupported browsers get a clear message.
 
-**Tested:** Chromium, with 34 automated end-to-end tests: file picker, drag &
+**Tested:** Chromium, with 39 automated end-to-end tests: file picker, drag &
 drop, paste, before/after slider (mouse and keyboard), background model
-preload, crash recovery, copy to clipboard, downloads, EXIF orientation, error cases, privacy
+preload, crash recovery, cropping (before/after, mouse and keyboard), recent
+results, copy to clipboard, downloads, EXIF orientation, error cases, privacy
 (network audit, CSP in the worker), WebAssembly path, WebGPU path (via
 SwiftShader), WebGPU→WebAssembly fallback, model cache, offline mode and the
 real model. **Not yet tested

@@ -97,11 +97,11 @@ test('a second image replaces the first one', async ({ page }) => {
   expect([png.width, png.height]).toEqual([400, 300]);
 });
 
-test('"Remove another image" returns to the start page', async ({ page }) => {
+test('"New image" returns to the start page', async ({ page }) => {
   await page.goto('./');
   await page.locator('#file-input').setInputFiles(image('animal-cat.jpg'));
   await waitForResult(page);
-  await page.getByRole('button', { name: 'Remove another image' }).click();
+  await page.getByRole('button', { name: 'New image' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-view', 'idle');
   await expect(page.getByRole('button', { name: 'Choose image' })).toBeFocused();
 });

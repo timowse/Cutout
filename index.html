@@ -141,6 +141,14 @@
             <div class="divider" aria-hidden="true"></div>
             <span class="divider-knob" aria-hidden="true"></span>
             <span class="compare-hint" id="compare-hint" data-i18n="result.compareHint" aria-hidden="true">Drag to compare</span>
+            <div class="crop-layer" id="crop-layer" hidden>
+              <div class="crop-box" id="crop-box" tabindex="0" role="group" data-i18n-attr="aria-label:crop.area" aria-label="Crop area">
+                <span class="crop-handle" data-corner="nw" tabindex="0" role="button" data-i18n-attr="aria-label:crop.cornerNw" aria-label="Top left corner"></span>
+                <span class="crop-handle" data-corner="ne" tabindex="0" role="button" data-i18n-attr="aria-label:crop.cornerNe" aria-label="Top right corner"></span>
+                <span class="crop-handle" data-corner="sw" tabindex="0" role="button" data-i18n-attr="aria-label:crop.cornerSw" aria-label="Bottom left corner"></span>
+                <span class="crop-handle" data-corner="se" tabindex="0" role="button" data-i18n-attr="aria-label:crop.cornerSe" aria-label="Bottom right corner"></span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -152,7 +160,29 @@
             </div>
             <div class="progress" id="progress" aria-hidden="true"><div class="progress-bar" id="progress-bar"></div></div>
             <p class="status-hint" id="status-hint" hidden></p>
-            <button class="button button-quiet" id="cancel-button" type="button" data-i18n="status.cancel">Cancel</button>
+            <div class="status-actions">
+              <button class="button button-quiet" id="crop-before-button" type="button" data-i18n="crop.open">Crop</button>
+              <button class="button button-quiet" id="cancel-button" type="button" data-i18n="status.cancel">Cancel</button>
+            </div>
+          </div>
+
+          <div class="crop-tools" id="crop-tools">
+            <div class="crop-row">
+              <div class="segmented" role="radiogroup" data-i18n-attr="aria-label:crop.ratio" aria-label="Aspect ratio">
+                <label><input type="radio" name="crop-ratio" value="free" checked /><span data-i18n="crop.free">Free</span></label>
+                <label><input type="radio" name="crop-ratio" value="1" /><span>1:1</span></label>
+              </div>
+              <button class="button button-quiet" id="crop-all-button" type="button" data-i18n="crop.all">Whole image</button>
+            </div>
+            <label class="crop-rerun" id="crop-rerun-option">
+              <input type="checkbox" id="crop-rerun" />
+              <span data-i18n="crop.rerun">Remove the background again for this area (more detail)</span>
+            </label>
+            <p class="crop-hint" id="crop-hint" data-i18n="crop.hintBefore">The AI then only processes the selected area.</p>
+            <div class="crop-actions">
+              <button class="button button-secondary" id="crop-cancel-button" type="button" data-i18n="crop.cancel">Cancel</button>
+              <button class="button button-primary" id="crop-apply-button" type="button" data-i18n="crop.apply">Crop</button>
+            </div>
           </div>
 
           <div class="result" id="result">
@@ -163,20 +193,28 @@
                 </svg>
                 <span id="download-label" data-i18n="result.download">Download PNG</span>
               </a>
+              <div class="result-more">
               <button class="button button-secondary button-large" id="copy-button" type="button" hidden>
                 <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                   <rect x="8.5" y="8.5" width="11" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8" />
                   <path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.8" />
                 </svg>
-                <span data-i18n="result.copy">Copy image</span>
+                <span class="only-wide" data-i18n="result.copy">Copy image</span>
+                <span class="only-narrow" aria-hidden="true" data-i18n="result.copyShort">Copy</span>
+              </button>
+              <button class="button button-secondary button-large" id="crop-button" type="button">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M7 3v14h14M3 7h14v14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <span data-i18n="crop.open">Crop</span>
               </button>
               <button class="button button-secondary button-large" id="new-button" type="button">
                 <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                   <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
                 </svg>
-                <span class="only-wide" data-i18n="result.new">Remove another image</span>
-                <span class="only-narrow" aria-hidden="true" data-i18n="result.newShort">New image</span>
+                <span data-i18n="result.new">New image</span>
               </button>
+              </div>
             </div>
 
             <div class="result-options">
@@ -219,6 +257,16 @@
             </div>
           </div>
         </div>
+      </section>
+
+      <!-- Recently processed results, stored only on this device -->
+      <section class="history" id="history" aria-labelledby="history-title" hidden>
+        <div class="history-head">
+          <h2 class="history-title" id="history-title" data-i18n="history.title">Recent</h2>
+          <button class="button button-quiet" id="history-clear" type="button" data-i18n="history.clear">Clear history</button>
+        </div>
+        <ul class="history-list" id="history-list" role="list"></ul>
+        <p class="history-note" data-i18n="history.note">Stored only on this device. Click to download again.</p>
       </section>
     </main>
 

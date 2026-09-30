@@ -3,6 +3,7 @@
  * matte upsampling → foreground colour estimation → PNG.
  */
 
+import { toPixels, type Rect } from '../shared/crop';
 import { exceedsInputLimit, fitWithin, planOutputSize, type OutputPlan } from '../shared/dimensions';
 import { AppError } from '../shared/errors';
 import { applyForeground } from '../shared/foreground';
@@ -48,8 +49,15 @@ async function decodeOriented(file: Blob): Promise<ImageBitmap> {
   }
 }
 
-/** Decodes the file (respecting EXIF orientation) and returns its pixels at the planned output size. */
-export async function decodeImage(file: Blob, limits: ImageLimits): Promise<DecodedImage & { plan: OutputPlan }> {
+/**
+ * Decodes the file (respecting EXIF orientation) and returns its pixels at the
+ * planned output size; with `crop`, only that part of the image.
+ */
+export async function decodeImage(
+  file: Blob,
+  limits: ImageLimits,
+  crop?: Rect,
+): Promise<DecodedImage & { plan: OutputPlan }> {
   assertCanvasSupport();
   const info = await inspectImageFile(file);
   if (!info) throw new AppError('unsupported-format', `Unknown file type ${file.type}`);
@@ -64,15 +72,18 @@ export async function decodeImage(file: Blob, limits: ImageLimits): Promise<Deco
     throw new AppError(info.format === 'heic' ? 'heic-unsupported' : 'decode-failed', String(err));
   }
   try {
-    const { width: ow, height: oh } = bitmap;
-    if (!(ow > 0 && oh > 0)) throw new AppError('decode-failed', 'Empty image');
-    if (exceedsInputLimit(ow, oh, limits)) throw new AppError('too-large', `${ow}x${oh}`);
+    if (!(bitmap.width > 0 && bitmap.height > 0)) throw new AppError('decode-failed', 'Empty image');
+    if (exceedsInputLimit(bitmap.width, bitmap.height, limits)) {
+      throw new AppError('too-large', `${bitmap.width}x${bitmap.height}`);
+    }
+    const src = crop ? toPixels(crop, bitmap.width, bitmap.height) : { x: 0, y: 0, w: bitmap.width, h: bitmap.height };
+    const { w: ow, h: oh } = src;
     const plan = planOutputSize(ow, oh, limits);
     const canvas = new OffscreenCanvas(plan.width, plan.height);
     const ctx = context2d(canvas);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(bitmap, 0, 0, plan.width, plan.height);
+    ctx.drawImage(bitmap, src.x, src.y, src.w, src.h, 0, 0, plan.width, plan.height);
     let rgba: Uint8ClampedArray<ArrayBuffer>;
     try {
       rgba = ctx.getImageData(0, 0, plan.width, plan.height).data;
@@ -137,6 +148,21 @@ export function composeResult(image: DecodedImage, matte: Float32Array, manifest
     for (let i = 0, p = 3; i < alpha.length; i++, p += 4) alpha[i] = (alpha[i]! * image.rgba[p]! + 127) / 255;
   }
   applyForeground(image.rgba, alpha, image.width, image.height);
+}
+
+/** The part `rect` (relative to `image`) of a finished result, without copying when it is all of it. */
+export function cropDecoded(image: DecodedImage, rect: Rect): DecodedImage {
+  const px = toPixels(rect, image.width, image.height);
+  const originalWidth = Math.max(1, Math.round(rect.w * image.originalWidth));
+  const originalHeight = Math.max(1, Math.round(rect.h * image.originalHeight));
+  if (px.w === image.width && px.h === image.height) return image;
+  const rgba = new Uint8ClampedArray(px.w * px.h * 4);
+  const rowBytes = px.w * 4;
+  for (let y = 0; y < px.h; y++) {
+    const from = ((px.y + y) * image.width + px.x) * 4;
+    rgba.set(image.rgba.subarray(from, from + rowBytes), y * rowBytes);
+  }
+  return { rgba, width: px.w, height: px.h, originalWidth, originalHeight, hasAlpha: image.hasAlpha };
 }
 
 /** A downscaled copy of the result for the on-screen preview. */
