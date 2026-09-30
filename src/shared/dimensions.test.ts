@@ -21,6 +21,14 @@ describe('computeLimits', () => {
     const iphone = computeLimits({ isMobile: true, isIOS: true });
     expect(planOutputSize(4032, 3024, iphone).scaled).toBe(false);
   });
+
+  it('reduces results to about 6 MP in low-memory mode', () => {
+    const limits = computeLimits({ isMobile: true, isIOS: true, lowMemory: true });
+    const plan = planOutputSize(4032, 3024, limits);
+    expect(plan.scaled).toBe(true);
+    expect(plan.width * plan.height).toBeLessThanOrEqual(6_000_000);
+    expect(computeLimits({ isMobile: false, isIOS: false, deviceMemoryGB: 2, lowMemory: true }).maxOutputPixels).toBe(6_000_000);
+  });
 });
 
 describe('planOutputSize', () => {

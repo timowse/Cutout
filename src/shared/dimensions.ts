@@ -5,6 +5,8 @@ export interface DeviceHints {
   deviceMemoryGB?: number;
   isMobile: boolean;
   isIOS: boolean;
+  /** The page was killed while processing an image last time (see crash-guard.ts). */
+  lowMemory?: boolean;
 }
 
 const MP = 1_000_000;
@@ -15,6 +17,12 @@ const MP = 1_000_000;
  * AI model, so phones get tighter limits than desktops.
  */
 export function computeLimits(hints: DeviceHints): ImageLimits {
+  const limits = deviceLimits(hints);
+  // After a crash, results are reduced to about 6 MP (e.g. 2830 × 2120).
+  return hints.lowMemory ? { ...limits, maxOutputPixels: Math.min(limits.maxOutputPixels, 6 * MP) } : limits;
+}
+
+function deviceLimits(hints: DeviceHints): ImageLimits {
   const mem = hints.deviceMemoryGB;
   if (hints.isIOS) {
     // iOS Safari refuses canvases larger than 16,777,216 pixels.

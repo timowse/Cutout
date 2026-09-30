@@ -9,18 +9,26 @@ its deformable convolutions were exported as a GatherND/ScatterND
 decomposition that materialises tensors of up to 784 MB each and needs
 ~12 GB of RAM for a single 1024x1024 inference.
 
-This script performs three documented, verifiable transformations:
+This script performs documented, verifiable transformations:
 
 1. Deformable convolutions: every `.../atrous_conv` subgraph is replaced by a
    mathematically equivalent, memory-lean formulation (bilinear sampling via
-   Gather on a zero-padded input, processed in small groups of kernel taps and
-   accumulated with MatMul). The offset/modulator convolutions are kept as-is.
-2. The raw logits output gets a Sigmoid so the model directly returns an
+   Gather on a zero-padded input, one corner and a small group of kernel taps
+   at a time, accumulated with MatMul). The offset/modulator convolutions are
+   kept as-is.
+2. The decoder's image-to-patches step (a Concat of up to 1024 inputs) becomes
+   Reshape → Transpose → Reshape, which WebGPU can run.
+3. Memory rewrites that never materialise the decoder's widest tensors (up to
+   480 MiB at 1024 × 1024): a pointwise convolution over a concatenation
+   becomes a sum of pointwise convolutions, a pointwise convolution after a
+   bilinear resize moves before it, a pointwise convolution after another
+   convolution is folded into it, and a huge convolution → convolution
+   intermediate is computed in channel chunks. All are exact linear algebra.
+4. The raw logits output gets a Sigmoid so the model directly returns an
    alpha matte in [0, 1] named "alpha".
-3. Weight storage: large float32 weights are stored as float16 (default) and
-   converted back to float32 by a Cast node. ONNX Runtime constant-folds those
-   casts when the session is created, so all computation stays float32 while
-   the download is roughly halved.
+5. Weight storage: large float32 weights are stored as float16 (default) and
+   converted back to float32 by a Cast node, so all computation stays float32
+   while the download is roughly halved.
 
 Run `python tools/model/convert_birefnet.py --help` for options. The output is
 split into chunks (default 24 MiB) plus a manifest with SHA-256 hashes that
@@ -59,14 +67,18 @@ SOURCE = {
 # against the original export (see docs/MODEL.md). The conversion is
 # deterministic; if this changes, re-run the numerical comparison first.
 VALIDATED_OUTPUT_SHA256 = {
-    "fp16": "0ce20110922f0b2e08de82ec2b0dda2d9a94514002d068c6872c68dc5fa06cb4",
+    "fp16": "d816fd9efeac9a0c5ec15e579d83a21dba901327465516a4d83ae084dd5325bf",
 }
 
 INPUT_NAME = "input_image"
 OUTPUT_NAME = "alpha"
 INPUT_SIZE = 1024
-# Upper bound for the gathered tensor of one group of kernel taps.
-GROUP_BYTES = 32 * 1024 * 1024
+# Upper bound for the gathered samples of one group of kernel taps (one corner).
+GROUP_BYTES = 16 * 1024 * 1024
+# Pointwise convolutions over concatenations at least this large are split.
+SPLIT_MIN_BYTES = 32 * 1024 * 1024
+# Conv → Conv intermediates larger than this are computed in channel chunks.
+CHUNK_MAX_BYTES = 64 * 1024 * 1024
 # Only weights with at least this many elements are stored in reduced precision.
 MIN_COMPRESS_ELEMENTS = 4096
 
@@ -279,30 +291,34 @@ def replace_deformable_convs(model: onnx.ModelProto) -> int:
             (row1, x0c, lym, hx),
             (row1, x1c, lym, lx),
         ]
-        unsq_axis = ed.const(p + "/ax", np.array([1], np.int64))
-        idx_parts, w_parts = [], []
+        # Flat sample index and weight of each bilinear corner, [K, HW] each.
+        # int32 indices: the padded input has far fewer than 2^31 pixels.
+        corner_idx, corner_w = [], []
         for row, col, wy, wx in corners:
-            idx = ed.node("Cast", [ed.node("Add", [row, col], p)], p, to=TensorProto.INT64)
-            idx_parts.append(ed.node("Unsqueeze", [idx, unsq_axis], p))
-            w_parts.append(ed.node("Unsqueeze", [ed.node("Mul", [wy, wx], p), unsq_axis], p))
-        idx4 = ed.node("Concat", idx_parts, p, axis=1)  # [K, 4, HW] int64
-        w4 = ed.node("Concat", w_parts, p, axis=1)  # [K, 4, HW] float32
+            corner_idx.append(ed.node("Cast", [ed.node("Add", [row, col], p)], p, to=TensorProto.INT32))
+            corner_w.append(ed.node("Mul", [wy, wx], p))
 
-        per_tap_bytes = cin * 4 * hw * 4
+        # Taps are processed in groups; each corner is gathered separately so
+        # that no intermediate is larger than GROUP_BYTES.
+        per_tap_bytes = cin * hw * 4
         group = max(1, min(k_count, GROUP_BYTES // per_tap_bytes))
         axes0 = ed.const(p + "/ax0", np.array([0], np.int64))
-        axes2 = ed.const(p + "/ax2", np.array([2], np.int64))
         acc = None
         for k0 in range(0, k_count, group):
             g = min(group, k_count - k0)
             starts = ed.const(p + "/st", np.array([k0], np.int64))
             ends = ed.const(p + "/en", np.array([k0 + g], np.int64))
-            idx_g = ed.node("Slice", [idx4, starts, ends, axes0], p)
-            idx_g = ed.node("Reshape", [idx_g, ed.const(p + "/s", np.array([g * 4 * hw], np.int64))], p)
-            vals = ed.node("Gather", [xf, idx_g], p, axis=1)  # [C, g*4*HW]
-            vals = ed.node("Reshape", [vals, ed.const(p + "/s", np.array([cin, g, 4, hw], np.int64))], p)
-            w_g = ed.node("Slice", [w4, starts, ends, axes0], p)  # [g, 4, HW]
-            sampled = ed.node("ReduceSum", [ed.node("Mul", [vals, w_g], p), axes2], p, keepdims=0)  # [C, g, HW]
+            flat = ed.const(p + "/s", np.array([g * hw], np.int64))
+            row_shape = ed.const(p + "/s", np.array([1, g * hw], np.int64))
+            sampled = None
+            for idx_c, w_c in zip(corner_idx, corner_w):
+                idx_g = ed.node("Reshape", [ed.node("Slice", [idx_c, starts, ends, axes0], p), flat], p)
+                vals = ed.node("Gather", [xf, idx_g], p, axis=1)  # [C, g*HW]
+                w_g = ed.node("Reshape", [ed.node("Slice", [w_c, starts, ends, axes0], p), row_shape], p)
+                term = ed.node("Mul", [vals, w_g], p)
+                sampled = term if sampled is None else ed.node("Add", [sampled, term], p)
+            assert sampled is not None
+            # [C, g*HW] is [C, g, HW] in memory, i.e. rows c*g + t as the weights below.
             sampled = ed.node("Reshape", [sampled, ed.const(p + "/s", np.array([cin * g, hw], np.int64))], p)
             # W_g[o, c*g + t] = W[o, c, ky(k0+t), kx(k0+t)]
             w_taps = weight.reshape(cout, cin, k_count)[:, :, k0 : k0 + g].reshape(cout, cin * g)
@@ -389,6 +405,223 @@ def replace_patch_concats(model: onnx.ModelProto) -> int:
     graph.node.extend(kept + ed.new_nodes)
     graph.initializer.extend(ed.new_inits)
     return count
+
+
+def _attrs(node: onnx.NodeProto) -> dict:
+    return {a.name: helper.get_attribute_value(a) for a in node.attribute}
+
+
+def _consumers(graph: onnx.GraphProto) -> dict[str, list[onnx.NodeProto]]:
+    users: dict[str, list[onnx.NodeProto]] = defaultdict(list)
+    for n in graph.node:
+        for i in n.input:
+            if i:
+                users[i].append(n)
+    for o in graph.output:
+        users[o.name].append(None)  # type: ignore[arg-type]  # graph outputs count as a use
+    return users
+
+
+def _nbytes(shape: list[int] | None) -> int:
+    return 4 * math.prod(shape) if shape else 0
+
+
+def _conv_params(node: onnx.NodeProto, inits: dict[str, onnx.TensorProto]):
+    """Weight and bias (float32) of a plain Conv (group 1, weights stored in the file), else None."""
+    if node.op_type != "Conv" or node.input[1] not in inits or _attrs(node).get("group", 1) != 1:
+        return None
+    if len(node.input) > 2 and node.input[2] and node.input[2] not in inits:
+        return None
+    w = numpy_helper.to_array(inits[node.input[1]]).astype(np.float32)
+    b = numpy_helper.to_array(inits[node.input[2]]).astype(np.float32) if len(node.input) > 2 and node.input[2] else None
+    return w, b
+
+
+def _is_pointwise(node: onnx.NodeProto, weight: np.ndarray) -> bool:
+    a = _attrs(node)
+    return (
+        weight.shape[2:] == (1, 1)
+        and all(s == 1 for s in a.get("strides", [1, 1]))
+        and not any(a.get("pads", [0, 0, 0, 0]))
+        and a.get("auto_pad", b"NOTSET") in (b"NOTSET", "NOTSET")
+    )
+
+
+def _replace_nodes(graph: onnx.GraphProto, ed: GraphEditor, remove: set[int]) -> None:
+    kept = [n for n in graph.node if id(n) not in remove]
+    del graph.node[:]
+    graph.node.extend(kept + ed.new_nodes)
+    graph.initializer.extend(ed.new_inits)
+
+
+def _conv(ed: GraphEditor, x: str, w: np.ndarray, b: np.ndarray | None, like: onnx.NodeProto, prefix: str,
+          output: str | None = None) -> str:
+    """A Conv with the attributes of `like` and new weights."""
+    attrs = {k: v for k, v in _attrs(like).items() if k != "kernel_shape"}
+    inputs = [x, ed.const(prefix + "/w", np.ascontiguousarray(w, np.float32))]
+    if b is not None:
+        inputs.append(ed.const(prefix + "/b", np.ascontiguousarray(b, np.float32)))
+    return ed.node("Conv", inputs, prefix, output=output, kernel_shape=list(w.shape[2:]), **attrs)
+
+
+def _sum(ed: GraphEditor, parts: list[str], prefix: str, output: str) -> None:
+    acc = parts[0]
+    for k, part in enumerate(parts[1:], 1):
+        acc = ed.node("Add", [acc, part], prefix, output=output if k == len(parts) - 1 else None)
+    if len(parts) == 1:
+        ed.node("Identity", [acc], prefix, output=output)
+
+
+def split_concat_convs(model: onnx.ModelProto, min_bytes: int) -> int:
+    """Conv1x1(Concat(x₁ … xₙ)) → Conv1x1(x₁, W₁) + … + Conv1x1(xₙ, Wₙ).
+
+    A pointwise convolution over concatenated channels is the sum of pointwise
+    convolutions over each part, so the (large) concatenated tensor is never
+    materialised and each part can be released as soon as its term is added.
+    """
+    graph = model.graph
+    shapes = infer_shapes(model)
+    inits = {t.name: t for t in graph.initializer}
+    producer = {o: n for n in graph.node for o in n.output}
+    users = _consumers(graph)
+    ed = GraphEditor(model)
+    remove: set[int] = set()
+    for conv in graph.node:
+        params = _conv_params(conv, inits)
+        cat = producer.get(conv.input[0]) if params else None
+        if params is None or not _is_pointwise(conv, params[0]) or cat is None or cat.op_type != "Concat":
+            continue
+        if _attrs(cat).get("axis") != 1 or len(users[cat.output[0]]) != 1:
+            continue
+        if _nbytes(shapes.get(cat.output[0])) < min_bytes:
+            continue
+        w, b = params
+        p = conv.name + "/split"
+        parts, start = [], 0
+        for k, x in enumerate(cat.input):
+            c = shapes[x][1]
+            parts.append(_conv(ed, x, w[:, start : start + c], b if k == 0 else None, conv, p))
+            start += c
+        if start != w.shape[1]:
+            raise SystemExit(f"{conv.name}: channel count mismatch")
+        _sum(ed, parts, p, conv.output[0])
+        remove.update({id(conv), id(cat)})
+    _replace_nodes(graph, ed, remove)
+    return len(remove) // 2
+
+
+def move_convs_before_resizes(model: onnx.ModelProto) -> int:
+    """Conv1x1(Resize(x)) → Resize(Conv1x1(x)) when the convolution reduces channels.
+
+    Linear (and nearest) resizing mixes pixels with weights that sum to one and
+    a pointwise convolution mixes channels per pixel, so the two commute
+    (bias included). The convolution then runs at the low resolution and the
+    wide upsampled tensor is never created.
+    """
+    graph = model.graph
+    shapes = infer_shapes(model)
+    inits = {t.name: t for t in graph.initializer}
+    producer = {o: n for n in graph.node for o in n.output}
+    users = _consumers(graph)
+    ed = GraphEditor(model)
+    remove: set[int] = set()
+    for conv in graph.node:
+        params = _conv_params(conv, inits)
+        rs = producer.get(conv.input[0]) if params else None
+        if params is None or not _is_pointwise(conv, params[0]) or rs is None or rs.op_type != "Resize":
+            continue
+        a = _attrs(rs)
+        if a.get("mode", b"nearest") not in (b"linear", b"nearest") or a.get("antialias", 0):
+            continue
+        if len(users[rs.output[0]]) != 1:
+            continue
+        x, out_shape = rs.input[0], shapes.get(rs.output[0])
+        w, b = params
+        if out_shape is None or x not in shapes or w.shape[0] >= shapes[x][1]:
+            continue
+        p = conv.name + "/before_resize"
+        y = _conv(ed, x, w, b, conv, p)
+        inputs = [y] + list(rs.input[1:])
+        if len(inputs) > 3 and inputs[3]:  # sizes: the channel count changes
+            inputs[3] = ed.const(p + "/sizes", np.array([out_shape[0], w.shape[0], *out_shape[2:]], np.int64))
+        ed.new_nodes.append(helper.make_node("Resize", inputs, [conv.output[0]], name=ed.name(p + "/Resize"), **a))
+        remove.update({id(conv), id(rs)})
+    _replace_nodes(graph, ed, remove)
+    return len(remove) // 2
+
+
+def fold_pointwise_convs(model: onnx.ModelProto) -> int:
+    """Conv1x1(Conv(x, W₁, b₁), W₂, b₂) → Conv(x, W₂·W₁, W₂·b₁ + b₂).
+
+    Two linear maps without an activation in between are one linear map; the
+    pointwise convolution has no padding, so this is exact at the borders too.
+    Only applied when it reduces channels (the intermediate tensor disappears).
+    """
+    graph = model.graph
+    inits = {t.name: t for t in graph.initializer}
+    producer = {o: n for n in graph.node for o in n.output}
+    users = _consumers(graph)
+    ed = GraphEditor(model)
+    remove: set[int] = set()
+    for conv in graph.node:
+        outer = _conv_params(conv, inits)
+        first = producer.get(conv.input[0]) if outer else None
+        if outer is None or not _is_pointwise(conv, outer[0]) or first is None or id(first) in remove:
+            continue
+        inner = _conv_params(first, inits)
+        if inner is None or len(users[first.output[0]]) != 1 or outer[0].shape[0] >= inner[0].shape[0]:
+            continue
+        w2 = outer[0][:, :, 0, 0].astype(np.float64)
+        w1, b1 = inner[0].astype(np.float64), inner[1]
+        w = np.einsum("oc,cikl->oikl", w2, w1)
+        b = np.zeros(w.shape[0])
+        if b1 is not None:
+            b += w2 @ b1.astype(np.float64)
+        if outer[1] is not None:
+            b += outer[1]
+        _conv(ed, first.input[0], w, b, first, conv.name + "/folded", output=conv.output[0])
+        remove.update({id(conv), id(first)})
+    _replace_nodes(graph, ed, remove)
+    return len(remove) // 2
+
+
+def chunk_wide_convs(model: onnx.ModelProto, max_bytes: int) -> int:
+    """Conv_B(Conv_A(x)) with a huge intermediate → Σₖ Conv_B,k(Conv_A,k(x)).
+
+    Conv_A's output channels are computed in chunks; each chunk goes straight
+    into its share of Conv_B (a convolution is a sum over input channels), so
+    only one chunk of the intermediate tensor exists at a time.
+    """
+    graph = model.graph
+    shapes = infer_shapes(model)
+    inits = {t.name: t for t in graph.initializer}
+    users = _consumers(graph)
+    ed = GraphEditor(model)
+    remove: set[int] = set()
+    for first in graph.node:
+        inner = _conv_params(first, inits)
+        size = _nbytes(shapes.get(first.output[0]))
+        if inner is None or size <= max_bytes or len(users[first.output[0]]) != 1:
+            continue
+        second = users[first.output[0]][0]
+        outer = _conv_params(second, inits) if second is not None else None
+        if outer is None or second.input[0] != first.output[0] or {id(first), id(second)} & remove:
+            continue
+        channels = inner[0].shape[0]
+        chunks = math.ceil(size / max_bytes)
+        while channels % chunks:
+            chunks += 1
+        step = channels // chunks
+        p = second.name + "/chunked"
+        parts = []
+        for k in range(chunks):
+            s = slice(k * step, (k + 1) * step)
+            y = _conv(ed, first.input[0], inner[0][s], inner[1][s] if inner[1] is not None else None, first, p)
+            parts.append(_conv(ed, y, outer[0][:, s], outer[1] if k == 0 else None, second, p))
+        _sum(ed, parts, p, second.output[0])
+        remove.update({id(first), id(second)})
+    _replace_nodes(graph, ed, remove)
+    return len(remove) // 2
 
 
 def check_buffer_counts(model: onnx.ModelProto, limit: int = 8) -> list[str]:
@@ -609,6 +842,18 @@ def main() -> None:
     log(f"Replaced {n} deformable convolutions")
     n = replace_patch_concats(model)
     log(f"Rewrote {n} patch concatenations")
+    # Shape inference needs the nodes in topological order, so tidy up after every pass.
+    counts = []
+    for rewrite in (
+        lambda m: split_concat_convs(m, SPLIT_MIN_BYTES),
+        move_convs_before_resizes,
+        fold_pointwise_convs,
+        lambda m: chunk_wide_convs(m, CHUNK_MAX_BYTES),
+    ):
+        remove_unused(model)
+        topological_sort(model)
+        counts.append(rewrite(model))
+    log("Memory rewrites: {} concat convs split, {} convs moved before resizes, {} folded, {} chunked".format(*counts))
     add_sigmoid_output(model)
     remove_unused(model)
     topological_sort(model)

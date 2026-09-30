@@ -30,6 +30,12 @@ never leave your device**: the AI model runs locally in your browser.
 - **Download PNG**, **copy to clipboard**, before/after slider, background
   preview (transparent, white, black, custom colour) and *Download with
   background*.
+- **Crop** before or after removing the background (free or 1:1). While the AI
+  is still working, the crop is what the AI processes; a finished result is
+  cropped instantly, or optionally recomputed for the area for more detail.
+- **Recent results:** the last 12 cut-outs appear as a small gallery and can be
+  downloaded again with one click — stored only on this device (IndexedDB),
+  deleted after 30 days or with *Clear history*.
 - **WebGPU** acceleration with automatic **WebAssembly** fallback.
 - **Works offline** once the app and model are cached; installable as a PWA.
 - **The model loads in the background** as soon as the page is open (≈ 93 MB
@@ -48,8 +54,14 @@ never leave your device**: the AI model runs locally in your browser.
   analytics, no third-party scripts or fonts.
 - The Content-Security-Policy only allows network requests to the site's own
   origin (`connect-src 'self'`).
-- Images and results live in memory only and are gone on reload. The PNG
+- Original images live in memory only and are gone on reload. The PNG
   contains no metadata (no EXIF, no location).
+- The last 12 results (cut-out PNGs) are kept in the browser's IndexedDB on
+  this device for the *Recent* gallery — never uploaded, deleted after 30 days
+  or with *Clear history*.
+- Apart from that, the browser only keeps the cached app and model, the colour
+  theme and, while the AI is working, a small marker (no image data) that lets
+  the app notice if the browser ended the page.
 - The same policy also binds the background worker that processes the image
   (it is started in a way that inherits the page's policy).
 - End-to-end tests record every network request while an image is processed
@@ -75,12 +87,13 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | Model | **BiRefNet_lite** (general use, Swin-T backbone, epoch 232) by Peng Zheng et al. |
 | Source | Official release: <https://github.com/ZhengPeng7/BiRefNet/releases/tag/v1>, file `BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx`, SHA-256 `5600024376f5…3333` |
 | Licence | **MIT** (code and weights) |
-| In the browser | 92.5 MB (float16 weights), 4 chunks with SHA-256 verification |
+| In the browser | 92.9 MB (float16 weights), 4 chunks with SHA-256 verification |
 
 The official ONNX file needs ~12 GB of RAM because of how its deformable
 convolutions were exported; [`tools/model/convert_birefnet.py`](tools/model/convert_birefnet.py)
-rewrites them into a mathematically equivalent, memory-lean form (≈ 1.8 GB,
-max. deviation 4 × 10⁻⁵) and makes the graph WebGPU-compatible. The research,
+rewrites them into a mathematically equivalent, memory-lean form, removes the
+decoder's widest tensors (largest intermediate 96 MiB instead of 480 MiB; max.
+deviation 4 × 10⁻⁵) and makes the graph WebGPU-compatible. The research,
 licence comparison (IMG.LY is AGPL-3.0, BRIA RMBG is non-commercial) and all
 measurements are in [docs/MODEL.md](docs/MODEL.md); quality notes in
 [docs/QUALITY.md](docs/QUALITY.md).
@@ -94,12 +107,12 @@ Chromium, WebAssembly with 3 threads):
 | --- | --- |
 | Initial page (HTML + CSS + JS, gzip) | ≈ 22 KB — the AI runtime and model follow in the background after the page has loaded |
 | ONNX Runtime (first use, gzip) | 3.7 MB (WebAssembly build) or 6.7 MB (WebGPU build) |
-| Model download (first use only) | 92.5 MB |
+| Model download (first use only) | 92.9 MB |
 | Model ready: first visit / cached | 9.1 s (local network) / 3.9 s |
 | Inference, 1024 × 1024 | ≈ 22 s on CPU (WebAssembly); a GPU via WebGPU is much faster |
 | Decode / refine / PNG, 12 MP photo | 0.6 s / 1.4 s / 1.9 s |
 | Decode / refine / PNG, 24 MP photo | 1.3 s / 2.1 s / 3.2 s |
-| Peak memory of the page (CPU path, 12 MP) | ≈ 2.7 GB, stable over repeated images |
+| Peak memory of the page (CPU path, 12 MP) | ≈ 1.3 GB (first version: 2.7 GB), stable over repeated images |
 
 WebGPU could not be timed on real hardware in this environment (only a
 software GPU was available); it was verified functionally.
@@ -112,9 +125,10 @@ Safari 16.4+ and Chrome for Android. WebGPU is used where available (Chrome/Edge
 113+, Safari 26, Firefox on Windows) and falls back to WebAssembly otherwise or
 on any WebGPU error. Unsupported browsers get a clear message.
 
-**Tested:** Chromium, with 31 automated end-to-end tests: file picker, drag &
+**Tested:** Chromium, with 39 automated end-to-end tests: file picker, drag &
 drop, paste, before/after slider (mouse and keyboard), background model
-preload, copy to clipboard, downloads, EXIF orientation, error cases, privacy
+preload, crash recovery, cropping (before/after, mouse and keyboard), recent
+results, copy to clipboard, downloads, EXIF orientation, error cases, privacy
 (network audit, CSP in the worker), WebAssembly path, WebGPU path (via
 SwiftShader), WebGPU→WebAssembly fallback, model cache, offline mode and the
 real model. **Not yet tested
@@ -182,9 +196,12 @@ docs/           architecture, model and quality documentation
 
 - The first use downloads ≈ 93 MB. Without WebGPU, one image takes roughly
   10–60 s depending on the CPU.
-- Processing needs a lot of memory (≈ 2–3 GB on the CPU path). Older phones
-  may fail with "Not enough memory"; images are downscaled on phones when
-  necessary (e.g. max. 16.7 MP on iOS).
+- Processing needs a lot of memory (≈ 1.3 GB for the whole tab on the CPU
+  path, less with WebGPU). Images are downscaled on phones when necessary
+  (e.g. max. 16.7 MP on iOS). If the browser still ends the page (iOS Safari
+  does this without warning when memory runs out), the app notices it on the
+  next visit, explains it, does not preload the model again and reduces large
+  photos to about 6 MP.
 - The model works at 1024 × 1024: very fine hair strands on large photos get
   soft, true transparency (glass, motion blur) is not modelled. See
   [docs/QUALITY.md](docs/QUALITY.md).

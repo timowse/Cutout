@@ -10,8 +10,12 @@ import type { Backend, ModelConfig, ModelManifest } from '../shared/protocol';
 
 type Ort = typeof import('onnxruntime-web');
 
-/** The largest intermediate tensor of the model is 1×120×1024×1024 float32 (480 MiB). */
-const REQUIRED_GPU_BUFFER_BYTES = 120 * 1024 * 1024 * 4;
+/**
+ * The largest intermediate tensor of the model is 1×65536×384 float32
+ * (96 MiB, the backbone's first MLP), below the 128 MiB every WebGPU device
+ * supports, so this check only guards against unusual adapters.
+ */
+const REQUIRED_GPU_BUFFER_BYTES = 65536 * 384 * 4;
 
 export interface RuntimeSession {
   backend: Backend;
@@ -88,9 +92,14 @@ export async function createSession(
       executionProviders: [backend],
       graphOptimizationLevel: 'all',
       // WebAssembly memory can only grow, never shrink. Without the arena the
-      // CPU backend peaks at ~1.8 GB instead of ~3 GB for this model.
+      // CPU backend needs far less of it (the arena grows in large steps).
       enableCpuMemArena: false,
       logSeverityLevel: 3,
+      // CPU only: without constant folding the WebAssembly heap peaks at
+      // ~0.85 GB instead of ~1.4 GB (the float16 weights stay float16 and are
+      // widened per layer; measured, same speed). WebGPU keeps it, because
+      // unfolded shape computations would force GPU→CPU round trips.
+      ...(backend === 'wasm' ? { extra: { optimization: { disable_specified_optimizers: 'ConstantFolding' } } } : {}),
     });
   } catch (err) {
     throw new AppError(backend === 'webgpu' ? 'inference-failed' : 'runtime-unsupported', `Session: ${String(err)}`);

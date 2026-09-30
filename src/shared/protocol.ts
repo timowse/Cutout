@@ -6,6 +6,8 @@
  * does not match the job it currently shows, so results can never be mixed up.
  */
 
+import type { Rect } from './crop';
+
 export type Backend = 'webgpu' | 'wasm';
 
 /** Phases of getting the model ready. `download` and `cache` report bytes. */
@@ -68,7 +70,17 @@ export interface RGB {
 
 export type WorkerRequest =
   | { type: 'INIT_MODEL'; config: ModelConfig }
-  | { type: 'PROCESS_IMAGE'; jobId: number; file: Blob; limits: ImageLimits; previewMaxSide: number }
+  | {
+      type: 'PROCESS_IMAGE';
+      jobId: number;
+      file: Blob;
+      limits: ImageLimits;
+      previewMaxSide: number;
+      /** Only this part of the (EXIF-oriented) image is processed ("crop before"). */
+      crop?: Rect;
+    }
+  /** Crops the finished result of `fromJobId` without running the model again ("crop after"). */
+  | { type: 'CROP_RESULT'; jobId: number; fromJobId: number; rect: Rect; previewMaxSide: number }
   | { type: 'CANCEL_JOB'; jobId: number }
   | { type: 'RENDER_WITH_BACKGROUND'; jobId: number; requestId: number; color: RGB }
   | { type: 'RELEASE_RESULT'; jobId: number };

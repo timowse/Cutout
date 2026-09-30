@@ -470,6 +470,19 @@ html.dragging .dropzone {
   font-size: 0.8125rem;
 }
 
+.notice {
+  max-width: 560px;
+  margin: 0 auto 20px;
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, #e5a100 55%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, #e5a100 9%, var(--bg));
+  color: var(--fg);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  text-align: left;
+}
+
 .trust {
   display: flex;
   flex-wrap: wrap;
@@ -638,6 +651,15 @@ html.dragging .dropzone {
 .layer-original {
   clip-path: inset(0 calc((100 - var(--split)) * 1%) 0 0);
 }
+/* A cropped image shows only the region --cx/--cy/--cw/--ch (normalised) of the original. */
+.layer-original img {
+  position: absolute;
+  left: calc(var(--cx, 0) / var(--cw, 1) * -100%);
+  top: calc(var(--cy, 0) / var(--ch, 1) * -100%);
+  width: calc(100% / var(--cw, 1));
+  height: calc(100% / var(--ch, 1));
+  max-width: none;
+}
 .layer-result {
   clip-path: inset(0 0 0 calc(var(--split) * 1%));
   background-color: var(--checker-a);
@@ -736,6 +758,87 @@ html[data-view='complete'] .frame[data-hint='true'] .compare-hint {
   opacity: 1;
 }
 
+/* Crop editor over the preview */
+.crop-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  touch-action: none;
+}
+.crop-box {
+  position: absolute;
+  outline: 2px solid #ffffff;
+  box-shadow: 0 0 0 9999px rgb(10 10 12 / 0.55);
+  cursor: move;
+  touch-action: none;
+}
+/* Rule-of-thirds guides while dragging. */
+.crop-layer[data-dragging='true'] .crop-box {
+  background-image:
+    linear-gradient(to right, transparent calc(33.33% - 0.5px), rgb(255 255 255 / 0.5) 0 calc(33.33% + 0.5px), transparent 0 calc(66.66% - 0.5px), rgb(255 255 255 / 0.5) 0 calc(66.66% + 0.5px), transparent 0),
+    linear-gradient(to bottom, transparent calc(33.33% - 0.5px), rgb(255 255 255 / 0.5) 0 calc(33.33% + 0.5px), transparent 0 calc(66.66% - 0.5px), rgb(255 255 255 / 0.5) 0 calc(66.66% + 0.5px), transparent 0);
+}
+.crop-box:focus-visible {
+  outline: 3px solid var(--focus);
+}
+.crop-handle {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border: 0 solid #ffffff;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.45));
+}
+/* A generous invisible touch target around each corner. */
+.crop-handle::after {
+  content: '';
+  position: absolute;
+  inset: -14px;
+}
+.crop-handle:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 4px;
+}
+.crop-handle[data-corner='nw'] {
+  top: -4px;
+  left: -4px;
+  border-width: 4px 0 0 4px;
+  cursor: nwse-resize;
+}
+.crop-handle[data-corner='ne'] {
+  top: -4px;
+  right: -4px;
+  border-width: 4px 4px 0 0;
+  cursor: nesw-resize;
+}
+.crop-handle[data-corner='sw'] {
+  bottom: -4px;
+  left: -4px;
+  border-width: 0 0 4px 4px;
+  cursor: nesw-resize;
+}
+.crop-handle[data-corner='se'] {
+  right: -4px;
+  bottom: -4px;
+  border-width: 0 4px 4px 0;
+  cursor: nwse-resize;
+}
+html[data-cropping] .frame {
+  cursor: default;
+  touch-action: none;
+}
+html[data-cropping] .layer-original {
+  clip-path: none;
+  filter: none;
+}
+html[data-cropping] .layer-result,
+html[data-cropping] .divider,
+html[data-cropping] .divider-knob,
+html[data-cropping] .compare-hint,
+html[data-cropping] .scan {
+  visibility: hidden;
+  animation: none;
+}
+
 /* Subtle "working" sweep over the preview while the model runs. */
 .scan {
   position: absolute;
@@ -778,7 +881,7 @@ html[data-view='processing'] .layer-original {
 .panel {
   display: flex;
   justify-content: center;
-  width: min(100%, 760px);
+  width: min(100%, 900px);
   min-width: 0;
 }
 .status,
@@ -796,6 +899,95 @@ html[data-view='complete'] .result {
 }
 html[data-view='error'] .error {
   display: flex;
+}
+.crop-tools {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: min(100%, 520px);
+  text-align: center;
+}
+/* While cropping, the crop tools replace status, result and error. */
+html[data-cropping] .status,
+html[data-cropping] .result,
+html[data-cropping] .error {
+  display: none;
+}
+html[data-cropping] .crop-tools {
+  display: flex;
+}
+.crop-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px 16px;
+}
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+.segmented label {
+  position: relative;
+}
+.segmented input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.segmented span {
+  display: block;
+  min-width: 56px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.segmented input:checked + span {
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
+}
+.segmented input:focus-visible + span {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
+}
+.crop-rerun {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+}
+.crop-rerun input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--accent);
+}
+.crop-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.crop-actions {
+  display: flex;
+  gap: 10px;
+}
+.crop-actions .button {
+  min-width: 132px;
+}
+.status-actions {
+  display: flex;
+  gap: 16px;
 }
 
 .status {
@@ -871,6 +1063,14 @@ html[data-view='error'] .error {
   flex-wrap: wrap;
   justify-content: center;
   gap: 10px;
+}
+.result-more {
+  display: contents;
+}
+@media (min-width: 561px) {
+  .result-actions .button-large {
+    padding: 0 22px;
+  }
 }
 .result-options {
   display: flex;
@@ -992,16 +1192,98 @@ html[data-view='error'] .error {
 
 @media (max-width: 560px) {
   .result-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    flex-direction: column;
     width: 100%;
   }
-  .result-actions #download-link {
-    grid-column: 1 / -1;
+  /* Secondary actions become compact tiles (icon above a short label). */
+  .result-more {
+    display: grid;
+    grid-auto-columns: 1fr;
+    grid-auto-flow: column;
+    gap: 8px;
   }
-  .result-actions .button {
-    padding: 0 12px;
+  .result-more .button {
+    flex-direction: column;
+    gap: 4px;
+    min-height: 60px;
+    padding: 8px 6px;
+    font-size: 0.8125rem;
   }
+}
+
+/* ------------------------------------------------------------------------
+   History: recent results (stored on this device)
+   ------------------------------------------------------------------------ */
+.history {
+  width: min(100%, 900px);
+  margin: 0 auto;
+  padding: 8px 0 32px;
+}
+html[data-cropping] .history {
+  display: none;
+}
+.history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.history-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 650;
+}
+.history-list {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  padding: 3px 3px 8px;
+  overflow-x: auto;
+  list-style: none;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+.history-list li {
+  flex: none;
+  scroll-snap-align: start;
+}
+.history-item {
+  display: block;
+  width: 76px;
+  height: 76px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background-color: var(--checker-a);
+  background-image: conic-gradient(var(--checker-b) 25%, transparent 0 50%, var(--checker-b) 0 75%, transparent 0);
+  background-size: 12px 12px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    transform 0.15s var(--ease);
+}
+.history-item:hover {
+  border-color: var(--border-strong);
+}
+.history-item:active {
+  transform: scale(0.97);
+}
+.history-item:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.history-item img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.history-note {
+  margin: 2px 0 0;
+  color: var(--subtle);
+  font-size: 0.8125rem;
 }
 
 /* ------------------------------------------------------------------------
